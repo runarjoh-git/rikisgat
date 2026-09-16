@@ -1,0 +1,7 @@
+{
+  "name": "Ríkisgát - Innra Stjórnborð & Stöðuskýrsla",
+  "description": "Innra stjórnborð, ítarleg stöðuskýrsla og tæknilegt eftirlit fyrir Ríkisgát (opna reikninga ríkisins).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
