@@ -19,7 +19,7 @@ const STORAGE_KEY_BROAD_SEARCH = 'rikisgat_broad_search_enabled_v2';
 
 export default function App() {
   // Main view mode: 'dashboard' (Innra stjórnborð) or 'public' (Forsíða)
-  const [viewMode, setViewMode] = useState<'dashboard' | 'public'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'public'>('public');
 
   // Dashboard active tab
   const [activeDashboardTab, setActiveDashboardTab] = useState<'report' | 'tasks' | 'marketing' | 'tech' | 'simulator'>('report');

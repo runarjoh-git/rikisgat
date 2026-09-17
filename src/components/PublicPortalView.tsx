@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Stofnun, Invoice, SelectedInvoiceItem, TopSupplier } from '../types';
 import { getMonthlyPortalData, ISLENSKIR_MANUDIR } from '../data/mockData';
-import { formaTolu, stuttTala, talaITexta, fjoldiITexta } from '../utils/icelandicFormatters';
+import { formaTolu, stuttTala, talaITexta, fjoldiITexta, formaDags } from '../utils/icelandicFormatters';
 import { DbStatusResponse, checkDbStatus, fetchInstitutionsFromDb, fetchInvoicesFromDb, fetchOverviewFromDb, OverviewApiResponse, RealInvoiceRow } from '../services/api';
 import { DbConnectionModal } from './DbConnectionModal';
 
@@ -22,26 +22,27 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
   onOpenDashboard,
   broadSearchEnabled = false
 }) => {
-  const [selectedYear, setSelectedYear] = useState<string>('2025');
-  const [selectedMonth, setSelectedMonth] = useState<string>('1');
+  // Leitarskilyrði eru tóm að sjálfgefnu: notandi velur ár og mánuð áður en listi birtist
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activePeriod, setActivePeriod] = useState<'year' | 'month' | 'week' | 'day'>('month');
   
   // Expanded client rows (set of client names)
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
 
-  // Sorting - null means keep the randomized/shuffled order per month/year
+  // Sorting - null means keep the randomized/shuffled order per month/year (engin þvinguð röðun)
   const [sortColumn, setSortColumn] = useState<'client' | 'invoiceCount' | 'totalAmount' | null>(null);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   // Simulated update feedback state
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
-  // If broad search is disabled, make sure 'all' is reverted to valid defaults
+  // If broad search is disabled, make sure 'all' is reverted
   useEffect(() => {
     if (!broadSearchEnabled) {
-      if (selectedYear === 'all') setSelectedYear('2025');
-      if (selectedMonth === 'all') setSelectedMonth('1');
+      if (selectedYear === 'all') setSelectedYear('');
+      if (selectedMonth === 'all') setSelectedMonth('');
     }
   }, [broadSearchEnabled, selectedYear, selectedMonth]);
 
@@ -70,6 +71,24 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
 
   // Dynamically generated portal data: aggregated across all active years & months
   const monthlyData = useMemo(() => {
+    // Ef hvorki ár né mánuður hefur verið valinn birtist ekkert
+    if (!selectedYear || !selectedMonth) {
+      return {
+        year: 0,
+        month: 0,
+        monthName: '',
+        isFutureOrUnpublished: false,
+        stofnanir: [],
+        topSuppliers: {
+          month: { info: '', suppliers: [] },
+          year: { info: '', suppliers: [] },
+          week: { info: '', suppliers: [] },
+          day: { info: '', suppliers: [] }
+        },
+        getInvoicesForClient: () => []
+      };
+    }
+
     // If standard single year & single month, use getMonthlyPortalData directly
     if (!isAllYears && !isAllMonths) {
       return getMonthlyPortalData(selectedYear, selectedMonth);
@@ -119,9 +138,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     }
 
     const aggregatedStofnanir = Array.from(clientTotalsMap.values());
-
-    // Sort institutions by totalAmount descending by default
-    aggregatedStofnanir.sort((a, b) => b.totalAmount - a.totalAmount);
+    // Halda óbreyttri/óflokkaðri röð (ekki þvinguð röðun eftir upphæð)
 
     let labelMonthName = 'Allir mánuðir';
     if (!isAllMonths) {
@@ -245,8 +262,8 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
         fetchOverviewFromDb().then(ov => {
           if (ov && ov.source === 'postgres') {
             setDbOverview(ov);
-            // If the selected year is not among available years (e.g. 2026), default to newest real year
-            if (ov.availableYears && ov.availableYears.length > 0 && !ov.availableYears.includes(selectedYear)) {
+            // If user has chosen a year that is not among available years, align to newest
+            if (selectedYear && ov.availableYears && ov.availableYears.length > 0 && !ov.availableYears.includes(selectedYear)) {
               setSelectedYear(ov.availableYears[0]);
             }
           }
@@ -255,15 +272,16 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     });
   }, []);
 
-  // Fetch institutions when year/month or connection status changes
+  // Fetch institutions when year/month or connection status changes (only when both year and month are selected)
   useEffect(() => {
-    if (dbStatus?.connected) {
+    if (dbStatus?.connected && selectedYear && selectedMonth) {
       setIsLoadingDb(true);
+      setDbInvoicesCache({});
       fetchInstitutionsFromDb(selectedYear, selectedMonth).then(res => {
         if (res.rows && res.rows.length > 0) {
           setDbInstitutions(res.rows);
         } else {
-          // If no rows found in DB for this period (e.g. 2026 has 0 records), keep it empty instead of falling back to fake data!
+          // If no rows found in DB for this period, keep it empty instead of falling back to fake data!
           setDbInstitutions([]);
         }
       }).catch(() => {
@@ -271,6 +289,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
       }).finally(() => setIsLoadingDb(false));
     } else {
       setDbInstitutions(null);
+      setIsLoadingDb(false);
     }
   }, [selectedYear, selectedMonth, dbStatus?.connected]);
 
@@ -293,7 +312,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                   client: clientName,
                   supplier: r.supplier,
                   amount: r.amount,
-                  date: r.date,
+                  date: formaDags(r.date, selectedYear),
                   lines: (r.lines || []).map(l => ({
                     description: l.description,
                     amount: l.amount,
@@ -301,7 +320,11 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                   }))
                 }))
               }));
+            } else {
+              setDbInvoicesCache(prev => ({ ...prev, [clientName]: [] }));
             }
+          }).catch(() => {
+            setDbInvoicesCache(prev => ({ ...prev, [clientName]: [] }));
           });
         }
       }
@@ -336,6 +359,11 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
 
   // Filtered and sorted clients based on active year and month
   const filteredClients = useMemo(() => {
+    // Ekki birta neinn lista fyrr en notandi hefur valið bæði ár og mánuð
+    if (!selectedYear || !selectedMonth) {
+      return [];
+    }
+
     const q = searchQuery.toLowerCase().trim();
     const baseStofnanir = dbStatus?.connected
       ? (dbInstitutions ?? [])
@@ -352,7 +380,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
           client: cName,
           supplier: inv.supplier,
           amount: inv.amount,
-          date: inv.date,
+          date: formaDags(inv.date, selectedYear),
           lines: (inv.lines || []).map(l => ({
             description: l.description,
             amount: l.amount,
@@ -391,9 +419,8 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
             return sortAsc ? valA - valB : valB - valA;
           }
         });
-      } else {
-        results.sort((a, b) => b.totalAmount - a.totalAmount);
       }
+      // Ef ekkert sortColumn er valið: halda óbreyttri/ruglaðri röð
 
       return results;
     }
@@ -525,7 +552,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
         client: inv.client,
         supplier: inv.supplier,
         reikningsnr: inv.id,
-        dags: inv.date,
+        dags: formaDags(inv.date, selectedYear),
         lysing: allDesc,
         amount: inv.amount
       }
@@ -663,6 +690,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
               onChange={e => setSelectedYear(e.target.value)}
               className="p-2 border border-neutral-900 rounded text-sm font-semibold bg-white cursor-pointer outline-none focus:ring-2 focus:ring-neutral-900"
             >
+              <option value="">-- Veldu ár --</option>
               {broadSearchEnabled && (
                 <option value="all">🌟 Öll ár (2017–2026)</option>
               )}
@@ -682,6 +710,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
               onChange={e => setSelectedMonth(e.target.value)}
               className="p-2 border border-neutral-900 rounded text-sm font-semibold bg-white cursor-pointer outline-none focus:ring-2 focus:ring-neutral-900"
             >
+              <option value="">-- Veldu mánuð --</option>
               {broadSearchEnabled && (
                 <option value="all">🌟 Allir mánuðir (1–12)</option>
               )}
@@ -800,8 +829,22 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
         {/* Left Column: Tables & Shock Factor */}
         <section className="space-y-4">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {!selectedYear || !selectedMonth ? (
+            <div className="bg-white border-2 border-dashed border-neutral-300 rounded-xl p-10 sm:p-14 text-center shadow-xs">
+              <div className="w-14 h-14 rounded-full bg-neutral-100 border border-neutral-300 flex items-center justify-center mx-auto mb-4 text-neutral-700">
+                <Calendar className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight">
+                Veldu ár og mánuð til að birta lista
+              </h3>
+              <p className="text-xs text-neutral-600 max-w-md mx-auto mt-2 leading-relaxed font-medium">
+                Leitarskilyrði eru tóm að sjálfgefnu. Vinsamlegast veldu <strong>ár</strong> og <strong>mánuð</strong> í valmyndinni hér að ofan til að sækja og birta sundurliðaðan lista yfir stofnanir og reikninga.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className={`bg-white border border-neutral-900 p-4 rounded-xl shadow-xs flex flex-col justify-start transition-opacity duration-150 ${isUpdating ? 'opacity-50' : 'opacity-100'}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-black uppercase text-neutral-500 tracking-wider">
@@ -921,10 +964,13 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                   ) : (
                     filteredClients.map((client, idx) => {
                       const isExpanded = expandedClients.has(client.client);
-                      // Invoices specifically for this client in the chosen year and month (or matching subset if searching)
+                      const realInvoices = dbInvoicesCache[client.client];
+                      // Invoices specifically for this client: prioritize real PostgreSQL cache, then search matches, and ONLY use fallback if DB is completely offline
                       const invoicesForClient = 'matchingInvoices' in client && client.matchingInvoices 
                         ? client.matchingInvoices 
-                        : monthlyData.getInvoicesForClient(client.client, client.totalAmount);
+                        : (realInvoices 
+                            ? realInvoices 
+                            : (dbStatus?.connected ? [] : monthlyData.getInvoicesForClient(client.client, client.totalAmount)));
 
                       return (
                         <React.Fragment key={client.client}>
@@ -961,6 +1007,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
 
                           {/* Expanded Sub-table */}
                           {isExpanded && (() => {
+                            const isDbLoadingInvoices = Boolean(dbStatus?.connected && realInvoices === undefined);
                             const clientFilter = (clientFilterQueries[client.client] || '').toLowerCase().trim();
                             const rawInvoices = invoicesForClient;
                             const displayInvoices = clientFilter
@@ -1033,10 +1080,24 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-neutral-200">
-                                      {paginatedInvoices.length === 0 ? (
+                                      {isDbLoadingInvoices ? (
+                                        <tr>
+                                          <td colSpan={4} className="p-6 text-center text-neutral-600 font-mono text-xs">
+                                            <div className="flex items-center justify-center gap-2">
+                                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-500" />
+                                              <span>Sæki raunreikninga fyrir {client.client} úr PostgreSQL...</span>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ) : paginatedInvoices.length === 0 ? (
                                         <tr>
                                           <td colSpan={4} className="p-4 text-center text-neutral-500 italic">
-                                            Engir reikningar fundust með síunni „{clientFilter}“.
+                                            {clientFilter 
+                                              ? `Engir reikningar fundust með síunni „${clientFilter}“.` 
+                                              : (dbStatus?.connected 
+                                                  ? 'Engir sundurliðaðir reikningar fundust í PostgreSQL fyrir þetta tímabil.' 
+                                                  : 'Engir reikningar fundust.')
+                                            }
                                           </td>
                                         </tr>
                                       ) : (
@@ -1051,7 +1112,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                           return (
                                             <React.Fragment key={inv.id}>
                                               <tr className={isSupplierMatch ? 'bg-amber-50/80 hover:bg-amber-100/70' : 'hover:bg-neutral-50/80'}>
-                                                <td className="p-2 font-mono text-neutral-600">{inv.date}</td>
+                                                <td className="p-2 font-mono text-neutral-600">{formaDags(inv.date, selectedYear)}</td>
                                                 <td className="p-2 font-bold text-neutral-900">
                                                   <span>{inv.supplier}</span>
                                                   {isSupplierMatch && (
@@ -1172,6 +1233,8 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
               </table>
             </div>
           </div>
+            </>
+          )}
         </section>
 
         {/* Right Column: Sidebar Panels */}
@@ -1210,21 +1273,27 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
               📌 {topSuppliersData.info}
             </div>
 
-            <ol className="divide-y divide-neutral-100 text-xs space-y-1">
-              {topSuppliersData.suppliers.map((b, bIdx) => (
-                <li key={b.supplier} className="pt-2 flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-neutral-100 text-neutral-800 font-mono font-bold text-[10px] flex items-center justify-center border border-neutral-300">
-                      {bIdx + 1}
+            {!selectedYear || !selectedMonth ? (
+              <div className="py-6 text-center text-neutral-500 text-xs italic">
+                Veldu ár og mánuð til að birta stærstu birgja.
+              </div>
+            ) : (
+              <ol className="divide-y divide-neutral-100 text-xs space-y-1">
+                {topSuppliersData.suppliers.map((b, bIdx) => (
+                  <li key={b.supplier} className="pt-2 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-neutral-100 text-neutral-800 font-mono font-bold text-[10px] flex items-center justify-center border border-neutral-300">
+                        {bIdx + 1}
+                      </span>
+                      <span className="font-semibold text-neutral-900">{b.supplier}</span>
+                    </div>
+                    <span className="font-mono font-bold text-neutral-800 text-[11px]">
+                      {stuttTala(b.total)}
                     </span>
-                    <span className="font-semibold text-neutral-900">{b.supplier}</span>
-                  </div>
-                  <span className="font-mono font-bold text-neutral-800 text-[11px]">
-                    {stuttTala(b.total)}
-                  </span>
-                </li>
-              ))}
-            </ol>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
 
           {/* Information Request Builder (Upplýsingabeiðni skv. 140/2012) */}

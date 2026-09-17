@@ -176,3 +176,78 @@ export function fjoldiITexta(tala: number): string {
   const suff = (rounded % 10 === 1 && rounded % 100 !== 11) ? 'reikningur' : 'reikningar';
   return loka.charAt(0).toUpperCase() + loka.slice(1) + ' ' + suff;
 }
+
+const MONTH_MAP: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+  mai: '05', maí: '05', jún: '06', júl: '07', ágú: '08', agu: '08',
+  okt: '10', nóv: '11', des: '12'
+};
+
+// Íslenskt dagsetningarsnið: dags-mán-ár (t.d. 15-06-2024 eða 15.06.2024)
+export function formaDags(dags: string | Date | null | undefined, fallbackYear?: string | number): string {
+  if (!dags) return '';
+  if (dags instanceof Date && !isNaN(dags.getTime())) {
+    const day = String(dags.getDate()).padStart(2, '0');
+    const month = String(dags.getMonth() + 1).padStart(2, '0');
+    const year = dags.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  if (typeof dags === 'string') {
+    const trimmed = dags.trim();
+    // 1. Handles ISO YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss or YYYY.MM.DD or YYYY/MM/DD
+    const ymdMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (ymdMatch) {
+      const [, y, m, d] = ymdMatch;
+      const day = d.padStart(2, '0');
+      const month = m.padStart(2, '0');
+      return `${day}-${month}-${y}`;
+    }
+    // 2. If already DD-MM-YYYY or DD.MM.YYYY or DD/MM/YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${y}`;
+    }
+    // 3. If short 2-digit year DD-MM-YY
+    const dmyShort = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+    if (dmyShort) {
+      const [, d, m, y] = dmyShort;
+      const fullYear = parseInt(y, 10) > 50 ? `19${y}` : `20${y}`;
+      return `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${fullYear}`;
+    }
+    // 4. Textual English or Icelandic dates (e.g. "Fri May 29", "May 29", "Fri May 29 2024", "29 May 2024", "29. maí 2024")
+    const textMatch = trimmed.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?(?:([a-záðéíóúýþæö]+)\s+(\d{1,2})|(\d{1,2})\.?\s+([a-záðéíóúýþæö]+))(?:\s*,?\s*(\d{4}))?/i);
+    if (textMatch) {
+      const rawMonth = (textMatch[1] || textMatch[4] || '').toLowerCase().slice(0, 3);
+      const monthNum = MONTH_MAP[rawMonth];
+      if (monthNum) {
+        const dayNum = (textMatch[2] || textMatch[3] || '1').padStart(2, '0');
+        let yearNum = textMatch[5];
+        if (!yearNum && fallbackYear && String(fallbackYear) !== 'all') {
+          yearNum = String(fallbackYear);
+        }
+        if (!yearNum) {
+          const foundY = trimmed.match(/\b(19\d\d|20\d\d)\b/);
+          if (foundY) yearNum = foundY[1];
+        }
+        if (!yearNum) {
+          yearNum = String(new Date().getFullYear());
+        }
+        return `${dayNum}-${monthNum}-${yearNum}`;
+      }
+    }
+    // 5. Only attempt generic Date parsing if a 4-digit year is explicitly in the string
+    if (/\b(19\d\d|20\d\d)\b/.test(trimmed)) {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        const day = String(parsed.getDate()).padStart(2, '0');
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const year = parsed.getFullYear();
+        return `${day}-${month}-${year}`;
+      }
+    }
+    return trimmed;
+  }
+  return String(dags);
+}

@@ -12,14 +12,14 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Database configuration state (defaults to environment or standard local PostgreSQL)
+// Database configuration state (supports DB_* from AGENTS.md, PG* from standard pg, and defaults to 'rikisgat')
 let dbConfig = {
-  host: process.env.PGHOST || "localhost",
-  port: parseInt(process.env.PGPORT || "5432", 10),
-  database: process.env.PGDATABASE || "opnir_reikningar",
-  user: process.env.PGUSER || "postgres",
-  password: process.env.PGPASSWORD || "",
-  connectionTimeoutMillis: 2500
+  host: process.env.DB_HOST || process.env.PGHOST || "localhost",
+  port: parseInt(process.env.DB_PORT || process.env.PGPORT || "5432", 10),
+  database: process.env.DB_NAME || process.env.PGDATABASE || "rikisgat",
+  user: process.env.DB_USER || process.env.PGUSER || "postgres",
+  password: process.env.DB_PASSWORD || process.env.PGPASSWORD || "",
+  connectionTimeoutMillis: 3000
 };
 
 let pool: pg.Pool | null = null;
@@ -32,6 +32,29 @@ function getPool(): pg.Pool {
     });
   }
   return pool;
+}
+
+// Resilient connection helper that tries alternate database names ('rikisgat' <-> 'opnir_reikningar') if not found
+async function getConnectedClient(): Promise<{ client: pg.PoolClient; release: () => void }> {
+  try {
+    const currentPool = getPool();
+    const client = await currentPool.connect();
+    return { client, release: () => client.release() };
+  } catch (err: any) {
+    if (err.code === '3D000') {
+      const alternate = dbConfig.database === 'rikisgat' ? 'opnir_reikningar' : 'rikisgat';
+      console.warn(`[PostgreSQL] Gagnagrunnur '${dbConfig.database}' fannst ekki (3D000). Reyni '${alternate}'...`);
+      dbConfig.database = alternate;
+      if (pool) {
+        await pool.end().catch(() => {});
+        pool = null;
+      }
+      const altPool = getPool();
+      const client = await altPool.connect();
+      return { client, release: () => client.release() };
+    }
+    throw err;
+  }
 }
 
 // Column mapping helper for real tables from opnirreikningar.is Excel imports
@@ -118,6 +141,58 @@ async function detectTableAndColumns(client: pg.PoolClient): Promise<ColumnMappi
   }
 }
 
+const SERVER_MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
+};
+
+function formatRowDate(val: any, fallbackYear?: string | number): string {
+  if (!val) return "";
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(val).trim();
+  const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  }
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  }
+  const textMatch = s.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?(?:([a-z]+)\s+(\d{1,2})|(\d{1,2})\.?\s+([a-z]+))(?:\s*,?\s*(\d{4}))?/i);
+  if (textMatch) {
+    const rawMonth = (textMatch[1] || textMatch[4] || "").toLowerCase().slice(0, 3);
+    const monthNum = SERVER_MONTH_MAP[rawMonth];
+    if (monthNum) {
+      const dayNum = (textMatch[2] || textMatch[3] || "1").padStart(2, "0");
+      let yearNum = textMatch[5];
+      if (!yearNum && fallbackYear && String(fallbackYear) !== "all") {
+        yearNum = String(fallbackYear);
+      }
+      if (!yearNum) {
+        const foundY = s.match(/\b(19\d\d|20\d\d)\b/);
+        if (foundY) yearNum = foundY[1];
+      }
+      if (!yearNum) yearNum = "2024";
+      return `${yearNum}-${monthNum}-${dayNum}`;
+    }
+  }
+  if (/\b(19\d\d|20\d\d)\b/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${mo}-${day}`;
+    }
+  }
+  return s;
+}
+
 // -------------------------------------------------------------
 // API Endpoints
 // -------------------------------------------------------------
@@ -130,8 +205,7 @@ app.get("/api/health", (_req, res) => {
 // 2. Database status & diagnostics
 app.get("/api/db-status", async (_req, res) => {
   try {
-    const currentPool = getPool();
-    const client = await currentPool.connect();
+    const { client, release } = await getConnectedClient();
     try {
       const tableRes = await client.query(`
         SELECT table_name 
@@ -163,7 +237,7 @@ app.get("/api/db-status", async (_req, res) => {
         message: `Tengt við PostgreSQL á ${dbConfig.host}:${dbConfig.port}. Fann ${totalRows.toLocaleString('is-IS')} færslur í töflunni '${mapping?.tableName || ''}'.`
       });
     } finally {
-      client.release();
+      release();
     }
   } catch (error: any) {
     res.json({
@@ -200,9 +274,8 @@ app.post("/api/db-config", async (req, res) => {
   cachedMapping = null;
 
   try {
-    const newPool = getPool();
-    const client = await newPool.connect();
-    client.release();
+    const { release } = await getConnectedClient();
+    release();
     res.json({ success: true, message: "Tenging tókst með nýjum stillingum!" });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -212,23 +285,27 @@ app.post("/api/db-config", async (req, res) => {
 // 4. Query Overview & Available Years from PostgreSQL
 app.get("/api/overview", async (_req, res) => {
   try {
-    const currentPool = getPool();
-    const client = await currentPool.connect();
+    const { client, release } = await getConnectedClient();
     try {
+      const mapping = await detectTableAndColumns(client);
+      const tableName = mapping?.tableName || "reikningar";
+      const dateCol = mapping?.dateCol ? `"${mapping.dateCol}"` : "dags";
+      const amountCol = mapping?.amountCol ? `"${mapping.amountCol}"` : "upphaed";
+
       // Find min date, max date, total sum and count
       const summaryRes = await client.query(`
         SELECT 
           COUNT(*) AS total_invoices,
-          COALESCE(SUM(upphaed), 0) AS total_amount,
-          MIN(dags) AS min_date,
-          MAX(dags) AS max_date
-        FROM reikningar;
+          COALESCE(SUM(${amountCol}), 0) AS total_amount,
+          MIN(${dateCol}) AS min_date,
+          MAX(${dateCol}) AS max_date
+        FROM "${tableName}";
       `);
 
       const yearsRes = await client.query(`
-        SELECT DISTINCT EXTRACT(YEAR FROM dags)::int AS ar
-        FROM reikningar
-        WHERE dags IS NOT NULL
+        SELECT DISTINCT EXTRACT(YEAR FROM ${dateCol}::timestamp)::int AS ar
+        FROM "${tableName}"
+        WHERE ${dateCol} IS NOT NULL
         ORDER BY ar DESC;
       `);
 
@@ -239,12 +316,12 @@ app.get("/api/overview", async (_req, res) => {
         source: "postgres",
         totalInvoices: parseInt(row.total_invoices, 10) || 0,
         totalAmount: parseFloat(row.total_amount) || 0,
-        minDate: row.min_date,
-        maxDate: row.max_date,
+        minDate: formatRowDate(row.min_date),
+        maxDate: formatRowDate(row.max_date),
         availableYears: years
       });
     } finally {
-      client.release();
+      release();
     }
   } catch (err: any) {
     res.json({
@@ -254,46 +331,66 @@ app.get("/api/overview", async (_req, res) => {
   }
 });
 
-// 5. Query Institutions from PostgreSQL with real JOIN
+// 5. Query Institutions from PostgreSQL with real JOIN or flat table
 app.get("/api/institutions", async (req, res) => {
   try {
-    const currentPool = getPool();
-    const client = await currentPool.connect();
+    const { client, release } = await getConnectedClient();
     try {
       const { year, month } = req.query;
       const conditions: string[] = [];
       const values: any[] = [];
 
+      const mapping = await detectTableAndColumns(client);
+      const tableName = mapping?.tableName || "reikningar";
+      const hasStofnanirTable = mapping?.tableName === "reikningar";
+      const dateCol = mapping?.dateCol ? `r."${mapping.dateCol}"` : "r.dags";
+      const amountCol = mapping?.amountCol ? `r."${mapping.amountCol}"` : "r.upphaed";
+      const clientCol = mapping?.clientCol ? `r."${mapping.clientCol}"` : 'r."stofnun"';
+
       if (year && year !== "all") {
         values.push(parseInt(year as string, 10));
-        conditions.push(`EXTRACT(YEAR FROM r.dags) = $${values.length}`);
+        conditions.push(`EXTRACT(YEAR FROM ${dateCol}::timestamp) = $${values.length}`);
       }
 
       if (month && month !== "all") {
         values.push(parseInt(month as string, 10));
-        conditions.push(`EXTRACT(MONTH FROM r.dags) = $${values.length}`);
+        conditions.push(`EXTRACT(MONTH FROM ${dateCol}::timestamp) = $${values.length}`);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-      // Real JOIN query against rikisgat database
-      const queryStr = `
-        SELECT 
-          COALESCE(s.nafn, 'Óskráð stofnun #' || r.stofnun_id) AS client,
-          COUNT(*) AS "invoiceCount",
-          COALESCE(SUM(r.upphaed), 0) AS "totalAmount"
-        FROM reikningar r
-        LEFT JOIN stofnanir s ON r.stofnun_id = s.id
-        ${whereClause}
-        GROUP BY s.nafn, r.stofnun_id
-        ORDER BY "totalAmount" DESC
-        LIMIT 250;
-      `;
+      let queryStr = "";
+      if (hasStofnanirTable) {
+        queryStr = `
+          SELECT 
+            COALESCE(s.nafn, 'Óskráð stofnun #' || r.stofnun_id) AS client,
+            COUNT(*) AS "invoiceCount",
+            COALESCE(SUM(${amountCol}), 0) AS "totalAmount"
+          FROM reikningar r
+          LEFT JOIN stofnanir s ON r.stofnun_id = s.id
+          ${whereClause}
+          GROUP BY s.nafn, r.stofnun_id
+          ORDER BY RANDOM()
+          LIMIT 250;
+        `;
+      } else {
+        queryStr = `
+          SELECT 
+            COALESCE(${clientCol}, 'Óskráð stofnun') AS client,
+            COUNT(*) AS "invoiceCount",
+            COALESCE(SUM(${amountCol}), 0) AS "totalAmount"
+          FROM "${tableName}" r
+          ${whereClause}
+          GROUP BY ${clientCol}
+          ORDER BY RANDOM()
+          LIMIT 250;
+        `;
+      }
 
       const result = await client.query(queryStr, values);
       res.json({
         source: "postgres",
-        table: "reikningar JOIN stofnanir",
+        table: tableName,
         rows: result.rows.map((r, idx) => ({
           id: idx + 1,
           client: r.client,
@@ -302,7 +399,7 @@ app.get("/api/institutions", async (req, res) => {
         }))
       });
     } finally {
-      client.release();
+      release();
     }
   } catch (err: any) {
     res.json({
@@ -316,8 +413,7 @@ app.get("/api/institutions", async (req, res) => {
 // 6. Query Invoices from PostgreSQL with real JOIN and search
 app.get("/api/invoices", async (req, res) => {
   try {
-    const currentPool = getPool();
-    const client = await currentPool.connect();
+    const { client, release } = await getConnectedClient();
     try {
       const {
         client: clientFilter,
@@ -329,39 +425,62 @@ app.get("/api/invoices", async (req, res) => {
         offset = "0"
       } = req.query;
 
+      const mapping = await detectTableAndColumns(client);
+      const tableName = mapping?.tableName || "reikningar";
+      const hasStofnanirTable = mapping?.tableName === "reikningar";
+      const dateCol = mapping?.dateCol ? `r."${mapping.dateCol}"` : "r.dags";
+      const amountCol = mapping?.amountCol ? `r."${mapping.amountCol}"` : "r.upphaed";
+      const clientCol = mapping?.clientCol ? `r."${mapping.clientCol}"` : 'r."stofnun"';
+      const supplierCol = mapping?.supplierCol ? `r."${mapping.supplierCol}"` : 'r."birgir"';
+
       const conditions: string[] = [];
       const values: any[] = [];
 
       if (clientFilter) {
         values.push(`%${clientFilter}%`);
-        conditions.push(`s.nafn ILIKE $${values.length}`);
+        if (hasStofnanirTable) {
+          conditions.push(`s.nafn ILIKE $${values.length}`);
+        } else {
+          conditions.push(`${clientCol} ILIKE $${values.length}`);
+        }
       }
 
       if (supplier) {
         values.push(`%${supplier}%`);
-        conditions.push(`b.nafn ILIKE $${values.length}`);
+        if (hasStofnanirTable) {
+          conditions.push(`b.nafn ILIKE $${values.length}`);
+        } else {
+          conditions.push(`${supplierCol} ILIKE $${values.length}`);
+        }
       }
 
       if (search) {
         const searchPattern = `%${search}%`;
         values.push(searchPattern);
         const pIdx = values.length;
-        conditions.push(`(
-          b.nafn ILIKE $${pIdx} OR 
-          s.nafn ILIKE $${pIdx} OR 
-          r.numer ILIKE $${pIdx} OR 
-          r.tegund ILIKE $${pIdx}
-        )`);
+        if (hasStofnanirTable) {
+          conditions.push(`(
+            b.nafn ILIKE $${pIdx} OR 
+            s.nafn ILIKE $${pIdx} OR 
+            r.numer ILIKE $${pIdx} OR 
+            r.tegund ILIKE $${pIdx}
+          )`);
+        } else {
+          conditions.push(`(
+            ${supplierCol} ILIKE $${pIdx} OR 
+            ${clientCol} ILIKE $${pIdx}
+          )`);
+        }
       }
 
       if (year && year !== "all") {
         values.push(parseInt(year as string, 10));
-        conditions.push(`EXTRACT(YEAR FROM r.dags) = $${values.length}`);
+        conditions.push(`EXTRACT(YEAR FROM ${dateCol}::timestamp) = $${values.length}`);
       }
 
       if (month && month !== "all") {
         values.push(parseInt(month as string, 10));
-        conditions.push(`EXTRACT(MONTH FROM r.dags) = $${values.length}`);
+        conditions.push(`EXTRACT(MONTH FROM ${dateCol}::timestamp) = $${values.length}`);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -373,22 +492,40 @@ app.get("/api/invoices", async (req, res) => {
       values.push(offsetVal);
       const offsetIndex = values.length;
 
-      const queryStr = `
-        SELECT 
-          r.id,
-          COALESCE(r.numer, 'REIKN-' || r.id) AS numer,
-          COALESCE(b.nafn, 'Óskráður birgir #' || r.birgi_id) AS supplier,
-          COALESCE(s.nafn, 'Óskráð stofnun #' || r.stofnun_id) AS client,
-          r.upphaed AS amount,
-          r.dags AS date,
-          r.tegund AS description
-        FROM reikningar r
-        LEFT JOIN birgjar b ON r.birgi_id = b.id
-        LEFT JOIN stofnanir s ON r.stofnun_id = s.id
-        ${whereClause}
-        ORDER BY r.dags DESC NULLS LAST, r.id DESC
-        LIMIT $${limitIndex} OFFSET $${offsetIndex};
-      `;
+      let queryStr = "";
+      if (hasStofnanirTable) {
+        queryStr = `
+          SELECT 
+            r.id,
+            COALESCE(r.numer, 'REIKN-' || r.id) AS numer,
+            COALESCE(b.nafn, 'Óskráður birgir #' || r.birgi_id) AS supplier,
+            COALESCE(s.nafn, 'Óskráð stofnun #' || r.stofnun_id) AS client,
+            ${amountCol} AS amount,
+            ${dateCol} AS date,
+            r.tegund AS description
+          FROM reikningar r
+          LEFT JOIN birgjar b ON r.birgi_id = b.id
+          LEFT JOIN stofnanir s ON r.stofnun_id = s.id
+          ${whereClause}
+          ORDER BY ${dateCol} DESC NULLS LAST, r.id DESC
+          LIMIT $${limitIndex} OFFSET $${offsetIndex};
+        `;
+      } else {
+        queryStr = `
+          SELECT 
+            r.id,
+            'REIKN-' || r.id AS numer,
+            COALESCE(${supplierCol}, 'Óskráður birgir') AS supplier,
+            COALESCE(${clientCol}, 'Óskráð stofnun') AS client,
+            ${amountCol} AS amount,
+            ${dateCol} AS date,
+            'Almennur rekstur' AS description
+          FROM "${tableName}" r
+          ${whereClause}
+          ORDER BY ${dateCol} DESC NULLS LAST, r.id DESC
+          LIMIT $${limitIndex} OFFSET $${offsetIndex};
+        `;
+      }
 
       const result = await client.query(queryStr, values);
 
@@ -399,7 +536,7 @@ app.get("/api/invoices", async (req, res) => {
           id: String(r.numer || r.id),
           supplier: r.supplier,
           amount: parseFloat(r.amount) || 0,
-          date: r.date ? String(r.date).slice(0, 10) : "",
+          date: formatRowDate(r.date, year as string),
           client: r.client,
           lines: [
             {
@@ -411,7 +548,7 @@ app.get("/api/invoices", async (req, res) => {
         }))
       });
     } finally {
-      client.release();
+      release();
     }
   } catch (err: any) {
     res.json({
@@ -426,20 +563,35 @@ app.get("/api/invoices", async (req, res) => {
 app.get("/api/benchmark", async (req, res) => {
   const startTime = Date.now();
   try {
-    const currentPool = getPool();
-    const client = await currentPool.connect();
+    const { client, release } = await getConnectedClient();
     try {
       const { testYear } = req.query;
 
+      const mapping = await detectTableAndColumns(client);
+      const tableName = mapping?.tableName || "reikningar";
+      const hasStofnanirTable = mapping?.tableName === "reikningar";
+      const dateCol = mapping?.dateCol ? `r."${mapping.dateCol}"` : "r.dags";
+      const amountCol = mapping?.amountCol ? `r."${mapping.amountCol}"` : "r.upphaed";
+
       // 1. Annual distribution from real PostgreSQL database
-      const annualQuery = `
+      const annualQuery = hasStofnanirTable ? `
         SELECT 
-          COALESCE(EXTRACT(YEAR FROM r.dags)::int, 0) AS year,
+          COALESCE(EXTRACT(YEAR FROM r.dags::timestamp)::int, 0) AS year,
           COUNT(*) AS "recordCount",
           COUNT(DISTINCT r.stofnun_id) AS "institutionCount",
           COUNT(DISTINCT r.birgi_id) AS "supplierCount",
           COALESCE(SUM(r.upphaed), 0) AS "totalAmount"
         FROM reikningar r
+        GROUP BY 1
+        ORDER BY year DESC;
+      ` : `
+        SELECT 
+          COALESCE(EXTRACT(YEAR FROM ${dateCol}::timestamp)::int, 0) AS year,
+          COUNT(*) AS "recordCount",
+          0 AS "institutionCount",
+          0 AS "supplierCount",
+          COALESCE(SUM(${amountCol}), 0) AS "totalAmount"
+        FROM "${tableName}" r
         GROUP BY 1
         ORDER BY year DESC;
       `;
@@ -451,12 +603,9 @@ app.get("/api/benchmark", async (req, res) => {
       if (testYear && testYear !== "all") {
         const testStart = Date.now();
         const testRes = await client.query(`
-          SELECT r.id, r.upphaed, r.dags, s.nafn AS client, b.nafn AS supplier
-          FROM reikningar r
-          LEFT JOIN stofnanir s ON r.stofnun_id = s.id
-          LEFT JOIN birgjar b ON r.birgi_id = b.id
-          WHERE EXTRACT(YEAR FROM r.dags) = $1
-          ORDER BY r.dags DESC
+          SELECT r.id, ${amountCol} AS upphaed, ${dateCol} AS dags
+          FROM "${tableName}" r
+          WHERE EXTRACT(YEAR FROM ${dateCol}::timestamp) = $1
           LIMIT 1000;
         `, [parseInt(testYear as string, 10)]);
         testLatencyMs = Date.now() - testStart;
@@ -483,7 +632,7 @@ app.get("/api/benchmark", async (req, res) => {
           }))
       });
     } finally {
-      client.release();
+      release();
     }
   } catch (err: any) {
     res.json({

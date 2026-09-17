@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Stofnun, Invoice, SelectedInvoiceItem, TopSupplier } from '../types';
 import { getMonthlyPortalData, ISLENSKIR_MANUDIR } from '../data/mockData';
-import { formaTolu, stuttTala } from '../utils/icelandicFormatters';
+import { formaTolu, stuttTala, formaDags } from '../utils/icelandicFormatters';
 import { checkDbStatus, fetchInstitutionsFromDb, fetchInvoicesFromDb, DbStatusResponse, RealInvoiceRow } from '../services/api';
 
 interface SearchResultItem {
@@ -17,26 +17,17 @@ interface SearchResultItem {
   isLineSearchMatch: boolean;
 }
 
-function formaDags(dagsStr: string): string {
-  if (!dagsStr) return '';
-  const parts = dagsStr.split('-');
-  if (parts.length === 3) {
-    return `${parts[2]}.${parts[1]}.${parts[0]}`;
-  }
-  return dagsStr;
-}
-
 interface AdvancedSearchSubTabProps {
   onOpenTasksTab?: () => void;
 }
 
 export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
-  // Ítarleg leit er alltaf í Breiðari Leit (alltaf aðgangur að Öll ár og Allir mánuðir)
+  // Ítarleg leit: leitarskilyrði eru tóm að sjálfgefnu
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('bílaleigubíl');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
-  const [sortColumn, setSortColumn] = useState<'client' | 'invoiceCount' | 'totalAmount' | null>('totalAmount');
+  const [sortColumn, setSortColumn] = useState<'client' | 'invoiceCount' | 'totalAmount' | null>(null);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
@@ -118,7 +109,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
             client: r.client || clientName,
             supplier: r.supplier || 'Ótilgreindur birgir',
             amount: Number(r.amount) || 0,
-            date: r.date || '2025-01-01',
+            date: formaDags(r.date, selectedYear) || '2025-01-01',
             lines: (r.lines || []).map(l => ({
               description: l.description || 'Færsla',
               amount: Number(l.amount) || 0,
@@ -264,8 +255,8 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
 
     // 2. Base institutions list: PostgreSQL if connected, otherwise fallback
     const allStofnanir: Array<{ id?: number; client: string; invoiceCount: number; totalAmount: number }> = 
-      (dbStatus?.connected && dbInstitutions && dbInstitutions.length > 0)
-        ? dbInstitutions
+      dbStatus?.connected
+        ? (dbInstitutions ?? [])
         : Array.from(institutionsMap.values());
 
     if (!q) {
@@ -803,7 +794,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
                                             {highlightMatch(inv.id, searchQuery)}
                                           </span>
                                           <span className="text-xs font-bold text-neutral-700">
-                                            {formaDags(inv.date)}
+                                            {formaDags(inv.date, selectedYear)}
                                           </span>
                                           <span className="text-neutral-400">•</span>
                                           <span className="text-xs font-bold text-neutral-900">

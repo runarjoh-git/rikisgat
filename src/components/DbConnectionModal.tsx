@@ -17,7 +17,7 @@ export const DbConnectionModal: React.FC<DbConnectionModalProps> = ({
 }) => {
   const [host, setHost] = useState(status?.host || 'localhost');
   const [port, setPort] = useState(String(status?.port || 5432));
-  const [database, setDatabase] = useState(status?.database || 'opnir_reikningar');
+  const [database, setDatabase] = useState(status?.database || 'rikisgat');
   const [user, setUser] = useState(status?.user || 'postgres');
   const [password, setPassword] = useState('');
   
