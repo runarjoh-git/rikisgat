@@ -422,6 +422,79 @@ app.get("/api/invoices", async (req, res) => {
   }
 });
 
+// 7. Benchmark & Annual breakdown endpoint
+app.get("/api/benchmark", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const currentPool = getPool();
+    const client = await currentPool.connect();
+    try {
+      const { testYear } = req.query;
+
+      // 1. Annual distribution from real PostgreSQL database
+      const annualQuery = `
+        SELECT 
+          COALESCE(EXTRACT(YEAR FROM r.dags)::int, 0) AS year,
+          COUNT(*) AS "recordCount",
+          COUNT(DISTINCT r.stofnun_id) AS "institutionCount",
+          COUNT(DISTINCT r.birgi_id) AS "supplierCount",
+          COALESCE(SUM(r.upphaed), 0) AS "totalAmount"
+        FROM reikningar r
+        GROUP BY 1
+        ORDER BY year DESC;
+      `;
+      const annualRes = await client.query(annualQuery);
+
+      // 2. If testYear requested, measure targeted query latency
+      let testLatencyMs = 0;
+      let testRowsCount = 0;
+      if (testYear && testYear !== "all") {
+        const testStart = Date.now();
+        const testRes = await client.query(`
+          SELECT r.id, r.upphaed, r.dags, s.nafn AS client, b.nafn AS supplier
+          FROM reikningar r
+          LEFT JOIN stofnanir s ON r.stofnun_id = s.id
+          LEFT JOIN birgjar b ON r.birgi_id = b.id
+          WHERE EXTRACT(YEAR FROM r.dags) = $1
+          ORDER BY r.dags DESC
+          LIMIT 1000;
+        `, [parseInt(testYear as string, 10)]);
+        testLatencyMs = Date.now() - testStart;
+        testRowsCount = testRes.rows.length;
+      }
+
+      const totalLatency = Date.now() - startTime;
+
+      res.json({
+        source: "postgres",
+        latencyMs: totalLatency,
+        testLatencyMs: testLatencyMs || totalLatency,
+        testRowsCount,
+        years: annualRes.rows
+          .filter(r => r.year > 2000 && r.year < 2050)
+          .map(r => ({
+            year: r.year,
+            recordCount: parseInt(r.recordCount, 10) || 0,
+            institutionCount: parseInt(r.institutionCount, 10) || 0,
+            supplierCount: parseInt(r.supplierCount, 10) || 0,
+            totalAmount: parseFloat(r.totalAmount) || 0,
+            // Estimated index size based on real records
+            dataSizeMb: Math.round((parseInt(r.recordCount, 10) || 0) * 0.00028 * 10) / 10
+          }))
+      });
+    } finally {
+      client.release();
+    }
+  } catch (err: any) {
+    res.json({
+      source: "mock",
+      error: err.message,
+      latencyMs: Date.now() - startTime,
+      years: []
+    });
+  }
+});
+
 // -------------------------------------------------------------
 // Vite middleware integration
 // -------------------------------------------------------------

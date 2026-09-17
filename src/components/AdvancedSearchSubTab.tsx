@@ -2,11 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Building2, Search, ArrowUpDown, ChevronRight, ChevronDown, Plus, 
   Trash2, Copy, Check, Download, Calendar, Shield, ExternalLink, RefreshCw,
-  AlertCircle, CheckCircle2, Zap, FileText, Sparkles, Filter, X
+  AlertCircle, CheckCircle2, Zap, FileText, Sparkles, Filter, X, Database
 } from 'lucide-react';
 import { Stofnun, Invoice, SelectedInvoiceItem, TopSupplier } from '../types';
 import { getMonthlyPortalData, ISLENSKIR_MANUDIR } from '../data/mockData';
 import { formaTolu, stuttTala } from '../utils/icelandicFormatters';
+import { checkDbStatus, fetchInstitutionsFromDb, fetchInvoicesFromDb, DbStatusResponse, RealInvoiceRow } from '../services/api';
 
 interface SearchResultItem {
   client: string;
@@ -39,6 +40,99 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
+  // PostgreSQL real-data state
+  const [dbStatus, setDbStatus] = useState<DbStatusResponse | null>(null);
+  const [dbInstitutions, setDbInstitutions] = useState<Array<{ id: number; client: string; invoiceCount: number; totalAmount: number }> | null>(null);
+  const [dbInvoicesByClient, setDbInvoicesByClient] = useState<Record<string, Invoice[]>>({});
+  const [dbSearchResults, setDbSearchResults] = useState<RealInvoiceRow[] | null>(null);
+  const [isLoadingDb, setIsLoadingDb] = useState(false);
+
+  // Check DB status on mount
+  useEffect(() => {
+    checkDbStatus().then(status => {
+      setDbStatus(status);
+    });
+  }, []);
+
+  // Fetch institutions from DB when year/month changes
+  useEffect(() => {
+    if (dbStatus?.connected) {
+      setIsLoadingDb(true);
+      fetchInstitutionsFromDb(selectedYear, selectedMonth).then(res => {
+        if (res.rows) {
+          setDbInstitutions(res.rows);
+        }
+      }).catch(() => {
+        setDbInstitutions([]);
+      }).finally(() => setIsLoadingDb(false));
+    } else {
+      setDbInstitutions(null);
+    }
+  }, [selectedYear, selectedMonth, dbStatus?.connected]);
+
+  // Real-time PostgreSQL search when user types in search query
+  useEffect(() => {
+    if (dbStatus?.connected && searchQuery.trim()) {
+      const timer = setTimeout(() => {
+        setIsLoadingDb(true);
+        fetchInvoicesFromDb({
+          search: searchQuery.trim(),
+          year: selectedYear,
+          month: selectedMonth,
+          limit: 300
+        }).then(res => {
+          if (res.rows) {
+            setDbSearchResults(res.rows);
+          }
+        }).finally(() => setIsLoadingDb(false));
+      }, 250);
+      return () => clearTimeout(timer);
+    } else {
+      setDbSearchResults(null);
+    }
+  }, [searchQuery, dbStatus?.connected, selectedYear, selectedMonth]);
+
+  // Fetch invoices for expanded clients from PostgreSQL
+  const toggleClientExpansion = async (clientName: string) => {
+    setExpandedClients(prev => {
+      const next = new Set(prev);
+      if (next.has(clientName)) {
+        next.delete(clientName);
+      } else {
+        next.add(clientName);
+      }
+      return next;
+    });
+
+    if (dbStatus?.connected && !dbInvoicesByClient[clientName]) {
+      try {
+        const res = await fetchInvoicesFromDb({
+          client: clientName,
+          year: selectedYear,
+          month: selectedMonth,
+          limit: 150
+        });
+        if (res && res.rows && res.rows.length > 0) {
+          const mapped: Invoice[] = res.rows.map(r => ({
+            id: r.id || `inv-${Math.random()}`,
+            client: r.client || clientName,
+            supplier: r.supplier || 'Ótilgreindur birgir',
+            amount: Number(r.amount) || 0,
+            date: r.date || '2025-01-01',
+            lines: (r.lines || []).map(l => ({
+              description: l.description || 'Færsla',
+              amount: Number(l.amount) || 0,
+              is_kredit: l.is_kredit ?? (Number(l.amount) < 0)
+            }))
+          }));
+          setDbInvoicesByClient(prev => ({ ...prev, [clientName]: mapped }));
+        }
+      } catch (e) {
+        console.error('Villa við að sækja reikninga úr gagnagrunni:', e);
+      }
+    }
+  };
+
   // Selected invoices for Act 140/2012
   const [selectedInvoices, setSelectedInvoices] = useState<SelectedInvoiceItem[]>([]);
   const [copiedLegalText, setCopiedLegalText] = useState(false);
@@ -57,7 +151,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   }, [isAllMonths, selectedMonth]);
 
-  // Aggregate monthly data and cache invoices across time range
+  // Aggregate monthly data and cache invoices across time range (fallback when DB is offline)
   const { institutionsMap, clientInvoicesMap } = useMemo(() => {
     const instMap = new Map<string, { id?: number; client: string; invoiceCount: number; totalAmount: number }>();
     const invMap = new Map<string, Invoice[]>();
@@ -66,7 +160,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       const monthsForYear = (yr === 2026 && isAllMonths) ? [1, 2, 3, 4, 5, 6] : activeMonths;
       for (const mo of monthsForYear) {
         const portal = getMonthlyPortalData(yr, mo);
-        for (const st of portal.stofnanir) {
+        for (const st of (portal?.stofnanir || [])) {
           const prev = instMap.get(st.client);
           if (prev) {
             prev.invoiceCount += st.invoiceCount;
@@ -82,7 +176,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
 
           // Invoices collection for client
           const existingInvs = invMap.get(st.client) || [];
-          const generatedInvs = portal.getInvoicesForClient(st.client, st.totalAmount);
+          const generatedInvs = portal?.getInvoicesForClient ? portal.getInvoicesForClient(st.client, st.totalAmount) : [];
           
           for (const g of generatedInvs) {
             if (!existingInvs.some(e => e.id === g.id)) {
@@ -104,19 +198,6 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     return () => clearTimeout(t);
   }, [selectedYear, selectedMonth]);
 
-  // Toggle row expansion
-  const toggleClientExpansion = (clientName: string) => {
-    setExpandedClients(prev => {
-      const next = new Set(prev);
-      if (next.has(clientName)) {
-        next.delete(clientName);
-      } else {
-        next.add(clientName);
-      }
-      return next;
-    });
-  };
-
   // Sort handler
   const handleSort = (column: 'client' | 'invoiceCount' | 'totalAmount') => {
     if (sortColumn === column) {
@@ -127,15 +208,69 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     }
   };
 
-  // Search and filter logic
-  // Requirement: "hægt er að leita eftir texta í línu á reikningi. þeas ef leitað er eftir bílaleigubíl birtast bara reikingar með þeirri línu."
+  // Search and filter logic with PostgreSQL support
   const filteredResults = useMemo<SearchResultItem[]>(() => {
     const q = searchQuery.toLowerCase().trim();
-    const allStofnanir: Array<{ id?: number; client: string; invoiceCount: number; totalAmount: number }> = Array.from(institutionsMap.values());
+
+    // 1. If PostgreSQL returned direct search results for this query, use real records!
+    if (dbStatus?.connected && q && dbSearchResults && dbSearchResults.length > 0) {
+      const clientMap = new Map<string, Invoice[]>();
+      for (const inv of dbSearchResults) {
+        const cName = inv.client || 'Ótilgreind stofnun';
+        const list = clientMap.get(cName) || [];
+        list.push({
+          id: inv.id,
+          client: cName,
+          supplier: inv.supplier,
+          amount: inv.amount,
+          date: inv.date,
+          lines: (inv.lines || []).map(l => ({
+            description: l.description,
+            amount: l.amount,
+            is_kredit: l.is_kredit ?? (l.amount < 0)
+          }))
+        });
+        clientMap.set(cName, list);
+      }
+
+      const results: SearchResultItem[] = [];
+      for (const [cName, invs] of clientMap.entries()) {
+        const total = invs.reduce((sum, i) => sum + i.amount, 0);
+        results.push({
+          client: cName,
+          invoiceCount: invs.length,
+          totalAmount: total,
+          matchingInvoices: invs,
+          isLineSearchMatch: true
+        });
+      }
+
+      if (sortColumn) {
+        results.sort((a, b) => {
+          if (sortColumn === 'client') {
+            return sortAsc ? a.client.localeCompare(b.client, 'is') : b.client.localeCompare(a.client, 'is');
+          } else if (sortColumn === 'invoiceCount') {
+            return sortAsc ? a.invoiceCount - b.invoiceCount : b.invoiceCount - a.invoiceCount;
+          } else {
+            return sortAsc ? a.totalAmount - b.totalAmount : b.totalAmount - a.totalAmount;
+          }
+        });
+      } else {
+        results.sort((a, b) => b.totalAmount - a.totalAmount);
+      }
+
+      return results;
+    }
+
+    // 2. Base institutions list: PostgreSQL if connected, otherwise fallback
+    const allStofnanir: Array<{ id?: number; client: string; invoiceCount: number; totalAmount: number }> = 
+      (dbStatus?.connected && dbInstitutions && dbInstitutions.length > 0)
+        ? dbInstitutions
+        : Array.from(institutionsMap.values());
 
     if (!q) {
       const list: SearchResultItem[] = allStofnanir.map(st => {
-        const invs = clientInvoicesMap.get(st.client) || [];
+        const invs = dbInvoicesByClient[st.client] || clientInvoicesMap.get(st.client) || [];
         return {
           client: st.client,
           invoiceCount: st.invoiceCount,
@@ -160,11 +295,11 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       return list;
     }
 
-    // Filter invoices by line item description, supplier, invoice ID, or institution name
+    // 3. In-memory filter on institutions and available cached invoices
     const results: SearchResultItem[] = [];
 
     for (const st of allStofnanir) {
-      const allInvs = clientInvoicesMap.get(st.client) || [];
+      const allInvs = dbInvoicesByClient[st.client] || clientInvoicesMap.get(st.client) || [];
 
       // Filter invoices where at least one line matches OR supplier matches OR id matches
       const matchingInvoices = allInvs.filter(inv => {
@@ -187,7 +322,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
         // Entire institution name matched, show all its invoices
         results.push({
           client: st.client,
-          invoiceCount: allInvs.length,
+          invoiceCount: allInvs.length || st.invoiceCount,
           totalAmount: st.totalAmount,
           matchingInvoices: allInvs,
           isLineSearchMatch: false
@@ -209,7 +344,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     }
 
     return results;
-  }, [institutionsMap, clientInvoicesMap, searchQuery, sortColumn, sortAsc]);
+  }, [institutionsMap, clientInvoicesMap, searchQuery, sortColumn, sortAsc, dbStatus?.connected, dbInstitutions, dbSearchResults, dbInvoicesByClient]);
 
   // Aggregate totals of active search
   const totalFilteredInvoices = useMemo(() => {
@@ -319,11 +454,29 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     <div className="space-y-6">
       {/* Header Banner */}
       <div className="bg-neutral-900 text-white p-5 sm:p-6 rounded-xl border border-neutral-800 shadow-xs space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-          <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
-            Ítarleg Leitardálkur &amp; Línuleit
-          </span>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
+              Ítarleg Leitardálkur &amp; Línuleit
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
+              dbStatus?.connected
+                ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+            }`}>
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{dbStatus?.connected ? `PostgreSQL: Tengt (${dbStatus.totalRows?.toLocaleString('is-IS')} færslur)` : 'PostgreSQL: Ótengt'}</span>
+            </span>
+            {isLoadingDb && (
+              <span className="text-[10px] text-neutral-400 font-mono flex items-center gap-1 animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin text-neutral-400" /> Leita í PostgreSQL...
+              </span>
+            )}
+          </div>
         </div>
         <h2 className="text-xl font-black tracking-tight">
           Ítarleg Leit í Öllum Reikningum og Bókhaldslínum (2017–2026)

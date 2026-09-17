@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, Zap, Search, BarChart3, CheckCircle2, RefreshCw, 
   Terminal, Layers, Tag, SlidersHorizontal, ArrowRight, Check, Sparkles, Globe2
@@ -7,6 +7,7 @@ import { DatabaseStats } from '../types';
 import { formaTolu, stuttTala } from '../utils/icelandicFormatters';
 import { CategoryStreamlining } from './CategoryStreamlining';
 import { AdvancedSearchSubTab } from './AdvancedSearchSubTab';
+import { fetchBenchmarkFromDb, BenchmarkYearRow, checkDbStatus } from '../services/api';
 
 interface DataSimulatorTabProps {
   stats: DatabaseStats;
@@ -24,28 +25,59 @@ export const DataSimulatorTab: React.FC<DataSimulatorTabProps> = ({
   const [lastQueryTime, setLastQueryTime] = useState<number>(0.0048);
   const [queryLog, setQueryLog] = useState<string>('SELECT s.nafn, agg.fjoldi, agg.summa FROM (SELECT stofnun_id, COUNT(*)...) JOIN stofnanir s...');
   const [activeYear, setActiveYear] = useState('2025');
+  const [dbYears, setDbYears] = useState<BenchmarkYearRow[]>([]);
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
+  const [dbTotalRows, setDbTotalRows] = useState<number>(0);
 
-  const runBenchmark = () => {
+  // Check DB and fetch benchmark on mount or when tab switches to benchmark
+  const loadBenchmarkData = async (testYear?: string) => {
     setQueryRunning(true);
-    setTimeout(() => {
-      const simulatedTime = (Math.random() * 0.003 + 0.003).toFixed(4);
-      setLastQueryTime(parseFloat(simulatedTime));
+    try {
+      const status = await checkDbStatus();
+      setIsDbConnected(status.connected);
+      if (status.totalRows) setDbTotalRows(status.totalRows);
+
+      const res = await fetchBenchmarkFromDb(testYear);
+      if (res.source === 'postgres' && res.years.length > 0) {
+        setDbYears(res.years);
+        const timeInSeconds = ((res.testLatencyMs || res.latencyMs) / 1000).toFixed(4);
+        setLastQueryTime(parseFloat(timeInSeconds));
+        setQueryLog(`EXPLAIN ANALYZE SELECT r.id, r.upphaed, s.nafn FROM reikningar r LEFT JOIN stofnanir s ON r.stofnun_id = s.id ${testYear ? `WHERE EXTRACT(YEAR FROM r.dags) = ${testYear}` : ''} LIMIT 1000; -- [Svarhraði: ${res.testLatencyMs || res.latencyMs}ms úr PostgreSQL]`);
+      } else {
+        // Fallback simulated time if DB not directly responding
+        setLastQueryTime(0.0048);
+      }
+    } catch {
+      setLastQueryTime(0.0048);
+    } finally {
       setQueryRunning(false);
-    }, 200);
+    }
   };
 
-  const annualBreakdown = [
-    { year: '2026 (Jan–Jún)', count: 1296015, birgjar: '11.850', stofnanir: '172', sizeMb: '302 MiB', status: 'Lokið (100% - Nýjasti: 2026-06-30)' },
-    { year: '2025', count: 2596818, birgjar: '14.920', stofnanir: '172', sizeMb: '604 MiB', status: 'Lokið (100%)' },
-    { year: '2024', count: 2476040, birgjar: '14.610', stofnanir: '172', sizeMb: '576 MiB', status: 'Lokið (100%)' },
-    { year: '2023', count: 2481782, birgjar: '14.450', stofnanir: '171', sizeMb: '578 MiB', status: 'Lokið (100%)' },
-    { year: '2022', count: 2327682, birgjar: '14.120', stofnanir: '170', sizeMb: '542 MiB', status: 'Lokið (100%)' },
-    { year: '2021', count: 2288953, birgjar: '13.980', stofnanir: '170', sizeMb: '533 MiB', status: 'Lokið (100%)' },
-    { year: '2020', count: 2149828, birgjar: '13.750', stofnanir: '169', sizeMb: '501 MiB', status: 'Lokið (100%)' },
-    { year: '2019', count: 1991243, birgjar: '13.340', stofnanir: '168', sizeMb: '464 MiB', status: 'Lokið (100%)' },
-    { year: '2018', count: 545206, birgjar: '8.450', stofnanir: '162', sizeMb: '127 MiB', status: 'Lokið (100%)' },
-    { year: '2017', count: 13747, birgjar: '1.820', stofnanir: '124', sizeMb: '3.2 MiB', status: 'Lokið (Ágú–Des 2017)' },
+  useEffect(() => {
+    if (activeSubTab === 'benchmark') {
+      loadBenchmarkData();
+    }
+  }, [activeSubTab]);
+
+  const runBenchmark = () => {
+    loadBenchmarkData(activeYear);
+  };
+
+  const defaultAnnualBreakdown = [
+    { year: 2026, recordCount: 1296015, supplierCount: 11850, institutionCount: 172, dataSizeMb: 302, totalAmount: 0 },
+    { year: 2025, recordCount: 2596818, supplierCount: 14920, institutionCount: 172, dataSizeMb: 604, totalAmount: 0 },
+    { year: 2024, recordCount: 2476040, supplierCount: 14610, institutionCount: 172, dataSizeMb: 576, totalAmount: 0 },
+    { year: 2023, recordCount: 2481782, supplierCount: 14450, institutionCount: 171, dataSizeMb: 578, totalAmount: 0 },
+    { year: 2022, recordCount: 2327682, supplierCount: 14120, institutionCount: 170, dataSizeMb: 542, totalAmount: 0 },
+    { year: 2021, recordCount: 2288953, supplierCount: 13980, institutionCount: 170, dataSizeMb: 533, totalAmount: 0 },
+    { year: 2020, recordCount: 2149828, supplierCount: 13750, institutionCount: 169, dataSizeMb: 501, totalAmount: 0 },
+    { year: 2019, recordCount: 1991243, supplierCount: 13340, institutionCount: 168, dataSizeMb: 464, totalAmount: 0 },
+    { year: 2018, recordCount: 545206, supplierCount: 8450, institutionCount: 162, dataSizeMb: 127, totalAmount: 0 },
+    { year: 2017, recordCount: 13747, supplierCount: 1820, institutionCount: 124, dataSizeMb: 3.2, totalAmount: 0 },
   ];
+
+  const displayBreakdown = dbYears.length > 0 ? dbYears : defaultAnnualBreakdown;
 
   return (
     <div className="space-y-6">
@@ -182,9 +214,11 @@ export const DataSimulatorTab: React.FC<DataSimulatorTabProps> = ({
           <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
             <div className="text-xs text-neutral-500 font-bold uppercase">Taflastærð sem er leitað í</div>
             <div className="text-2xl font-black text-neutral-900 mt-1 font-mono">
-              17.919.539 raðir
+              {dbTotalRows > 0 ? `${formaTolu(dbTotalRows)} raðir` : '17.919.539 raðir'}
             </div>
-            <div className="text-[11px] text-neutral-600 mt-0.5">4,2 GiB gagnatafla á D:\PostgreSQL</div>
+            <div className="text-[11px] text-neutral-600 mt-0.5">
+              {isDbConnected ? 'PostgreSQL rikisgat gagnatafla' : '4,2 GiB gagnatafla á D:\\PostgreSQL'}
+            </div>
           </div>
 
           <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
@@ -237,21 +271,25 @@ export const DataSimulatorTab: React.FC<DataSimulatorTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 font-mono">
-              {annualBreakdown.map((row, idx) => (
+              {displayBreakdown.map((row, idx) => (
                 <tr key={row.year} className={idx === 0 ? 'bg-blue-50/50' : 'hover:bg-neutral-50'}>
                   <td className="p-2.5 font-bold text-neutral-900">{row.year}</td>
-                  <td className="p-2.5 text-right font-bold">{formaTolu(row.count)}</td>
-                  <td className="p-2.5 text-right font-semibold text-neutral-700">{row.stofnanir}</td>
-                  <td className="p-2.5 text-right font-semibold text-neutral-700">{row.birgjar}</td>
-                  <td className="p-2.5 text-right text-neutral-600">{row.sizeMb}</td>
+                  <td className="p-2.5 text-right font-bold">{formaTolu(row.recordCount)}</td>
+                  <td className="p-2.5 text-right font-semibold text-neutral-700">{row.institutionCount ? formaTolu(row.institutionCount) : '—'}</td>
+                  <td className="p-2.5 text-right font-semibold text-neutral-700">{row.supplierCount ? formaTolu(row.supplierCount) : '—'}</td>
+                  <td className="p-2.5 text-right text-neutral-600">{row.dataSizeMb} MiB</td>
                   <td className="p-2.5 font-sans">
-                    {idx === 0 ? (
+                    {isDbConnected ? (
+                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Raungögn í PostgreSQL
+                      </span>
+                    ) : idx === 0 ? (
                       <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold">
-                        ⚡ {row.status}
+                        ⚡ Lokið (100% - Nýjasti: 2026-06-30)
                       </span>
                     ) : (
                       <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> {row.status}
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Lokið (100%)
                       </span>
                     )}
                   </td>
@@ -262,18 +300,20 @@ export const DataSimulatorTab: React.FC<DataSimulatorTabProps> = ({
               <tr className="bg-neutral-100 font-bold text-neutral-900 border-t-2 border-neutral-300">
                 <td className="p-2.5">SAMTALS ALLS</td>
                 <td className="p-2.5 text-right font-mono font-black text-sm">
-                  {formaTolu(stats.ar_2017_2025_fjoldi + stats.ar_2026_fjoldi)}
+                  {formaTolu(displayBreakdown.reduce((sum, r) => sum + r.recordCount, 0))}
                 </td>
                 <td className="p-2.5 text-right font-mono font-black">
-                  {stats.stofnanir_fjoldi}
+                  {Math.max(...displayBreakdown.map(r => r.institutionCount || 0), stats.stofnanir_fjoldi)}
                 </td>
                 <td className="p-2.5 text-right font-mono font-black">
-                  {formaTolu(stats.birgjar_fjoldi)}
+                  {formaTolu(Math.max(...displayBreakdown.map(r => r.supplierCount || 0), stats.birgjar_fjoldi))}
                 </td>
                 <td className="p-2.5 text-right font-mono font-black">
-                  {stats.total_size_gib} GiB
+                  {(displayBreakdown.reduce((sum, r) => sum + (r.dataSizeMb || 0), 0) / 1024).toFixed(1)} GiB
                 </td>
-                <td className="p-2.5 text-emerald-800 font-sans">100% Tilbúið í PostgreSQL 18</td>
+                <td className="p-2.5 text-emerald-800 font-sans">
+                  {isDbConnected ? '100% Tengt við PostgreSQL 18' : 'Tilbúið í PostgreSQL 18'}
+                </td>
               </tr>
             </tfoot>
           </table>

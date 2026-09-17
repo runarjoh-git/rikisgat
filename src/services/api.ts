@@ -170,3 +170,39 @@ export async function fetchInstitutionsFromDb(year?: string, month?: string): Pr
     };
   }
 }
+
+export interface BenchmarkYearRow {
+  year: number;
+  recordCount: number;
+  institutionCount: number;
+  supplierCount: number;
+  totalAmount: number;
+  dataSizeMb: number;
+}
+
+export interface BenchmarkApiResponse {
+  source: 'postgres' | 'mock';
+  latencyMs: number;
+  testLatencyMs?: number;
+  testRowsCount?: number;
+  years: BenchmarkYearRow[];
+  error?: string;
+}
+
+export async function fetchBenchmarkFromDb(testYear?: string): Promise<BenchmarkApiResponse> {
+  const query = new URLSearchParams();
+  if (testYear && testYear !== 'all') query.set('testYear', testYear);
+
+  try {
+    const res = await fetch(`/api/benchmark?${query.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err: any) {
+    return {
+      source: 'mock',
+      latencyMs: 0,
+      years: [],
+      error: err.message
+    };
+  }
+}

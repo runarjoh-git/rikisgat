@@ -26,8 +26,6 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('1');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activePeriod, setActivePeriod] = useState<'year' | 'month' | 'week' | 'day'>('month');
-  const [dbInvoicesByClient, setDbInvoicesByClient] = useState<Record<string, any[]>>({});
-  const [loadingClients, setLoadingClients] = useState<Record<string, boolean>>({});
   
   // Expanded client rows (set of client names)
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
@@ -87,9 +85,9 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     for (const yr of activeYears) {
       for (const mo of activeMonths) {
         const d = getMonthlyPortalData(yr, mo);
-        if (d?.isFutureOrUnpublished) anyFuture = true;
+        if (d.isFutureOrUnpublished) anyFuture = true;
 
-        for (const st of (d?.stofnanir || [])) {
+        for (const st of d.stofnanir) {
           totalSum += st.totalAmount;
           const current = clientTotalsMap.get(st.client);
           if (!current) {
@@ -105,7 +103,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
           }
 
           // Accumulate sample invoices
-          const invs = d?.getInvoicesForClient ? d.getInvoicesForClient(st.client, st.totalAmount) : [];
+          const invs = d.getInvoicesForClient(st.client, st.totalAmount);
           const existingInvs = clientInvoicesMap.get(st.client) || [];
           if (existingInvs.length < 60) {
             const combined = [...existingInvs];
@@ -189,12 +187,14 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
         if (stored && stored.length > 0) return stored;
         const refYear = isAllYears ? '2025' : selectedYear;
         const refMonth = isAllMonths ? '1' : selectedMonth;
-        const d = getMonthlyPortalData(refYear, refMonth);
-        return d?.getInvoicesForClient ? d.getInvoicesForClient(clientName, clientTotal) : [];
+        return getMonthlyPortalData(refYear, refMonth).getInvoicesForClient(clientName, clientTotal);
       }
     };
   }, [isAllYears, isAllMonths, selectedYear, selectedMonth, activeYears, activeMonths]);
 
+  // Dynamic quick-year list in the requested order:
+  // Ef valið er 2024 Júní: [2025, 2024, 2023, 2022] (1 ár upp og 2-3 niður, samtals 4 ár í röð frá hæsta til lægsta)
+  // Ef valið er nýjasta árið (2026): [2026, 2025, 2024, 2023] (árinu sem er og 3 fyrri ár)
   const quickYears = useMemo(() => {
     const currentYear = isAllYears ? 2025 : (parseInt(selectedYear, 10) || 2025);
     const MAX_YEAR = 2026;
@@ -207,7 +207,10 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     } else {
       const upYear = currentYear + 1;
       targetYears = [upYear, currentYear, currentYear - 1, currentYear - 2];
+      
+      // Tryggja að engin tala fari undir MIN_YEAR
       targetYears = targetYears.map(y => Math.max(MIN_YEAR, y));
+      // Taka einstök gildi ef komið er á endimörk
       targetYears = Array.from(new Set(targetYears));
       while (targetYears.length < 4 && Math.max(...targetYears) < MAX_YEAR) {
         targetYears.unshift(Math.max(...targetYears) + 1);
@@ -217,11 +220,15 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     return targetYears.filter(y => y >= MIN_YEAR && y <= MAX_YEAR);
   }, [selectedYear, isAllYears]);
 
+  // Selected invoices for Act 140/2012 - starts empty by default
   const [selectedInvoices, setSelectedInvoices] = useState<SelectedInvoiceItem[]>([]);
   const [copiedLegalText, setCopiedLegalText] = useState(false);
+
+  // Per-client in-drawer search filters and display limits
   const [clientFilterQueries, setClientFilterQueries] = useState<Record<string, string>>({});
   const [clientVisibleLimits, setClientVisibleLimits] = useState<Record<string, number>>({});
 
+  // Real-time PostgreSQL database state and live query results
   const [dbStatus, setDbStatus] = useState<DbStatusResponse | null>(null);
   const [dbOverview, setDbOverview] = useState<OverviewApiResponse | null>(null);
   const [showDbModal, setShowDbModal] = useState(false);
@@ -230,6 +237,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
   const [dbSearchResults, setDbSearchResults] = useState<RealInvoiceRow[] | null>(null);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
 
+  // Check DB status and overview on mount
   useEffect(() => {
     checkDbStatus().then(status => {
       setDbStatus(status);
@@ -237,6 +245,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
         fetchOverviewFromDb().then(ov => {
           if (ov && ov.source === 'postgres') {
             setDbOverview(ov);
+            // If the selected year is not among available years (e.g. 2026), default to newest real year
             if (ov.availableYears && ov.availableYears.length > 0 && !ov.availableYears.includes(selectedYear)) {
               setSelectedYear(ov.availableYears[0]);
             }
@@ -246,6 +255,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     });
   }, []);
 
+  // Fetch institutions when year/month or connection status changes
   useEffect(() => {
     if (dbStatus?.connected) {
       setIsLoadingDb(true);
@@ -253,6 +263,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
         if (res.rows && res.rows.length > 0) {
           setDbInstitutions(res.rows);
         } else {
+          // If no rows found in DB for this period (e.g. 2026 has 0 records), keep it empty instead of falling back to fake data!
           setDbInstitutions([]);
         }
       }).catch(() => {
@@ -267,35 +278,37 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
   useEffect(() => {
     if (dbStatus?.connected && expandedClients.size > 0) {
       for (const clientName of expandedClients) {
-        if (!dbInvoicesCache[clientName] && !dbInvoicesByClient[clientName]) {
+        if (!dbInvoicesCache[clientName]) {
           fetchInvoicesFromDb({
             client: clientName,
-            year: isAllYears ? undefined : selectedYear,
-            month: isAllMonths ? undefined : selectedMonth,
+            year: selectedYear,
+            month: selectedMonth,
             limit: 150
           }).then(res => {
             if (res.rows && res.rows.length > 0) {
-              const mapped = res.rows.map(r => ({
-                id: r.id || r.invoice_number || `inv-${Math.random()}`,
-                client: clientName,
-                supplier: r.supplier || 'Ótilgreindur birgir',
-                amount: Number(r.amount) || 0,
-                date: r.date || r.dags || '2025-01-01',
-                lines: (r.lines || []).map(l => ({
-                  description: l.description || 'Færsla',
-                  amount: Number(l.amount) || 0,
-                  is_kredit: l.is_kredit ?? (Number(l.amount) < 0)
+              setDbInvoicesCache(prev => ({
+                ...prev,
+                [clientName]: res.rows.map(r => ({
+                  id: r.id,
+                  client: clientName,
+                  supplier: r.supplier,
+                  amount: r.amount,
+                  date: r.date,
+                  lines: (r.lines || []).map(l => ({
+                    description: l.description,
+                    amount: l.amount,
+                    is_kredit: l.is_kredit ?? (l.amount < 0)
+                  }))
                 }))
               }));
-              setDbInvoicesCache(prev => ({ ...prev, [clientName]: mapped }));
-              setDbInvoicesByClient(prev => ({ ...prev, [clientName]: mapped }));
             }
           });
         }
       }
     }
-  }, [expandedClients, dbStatus?.connected, selectedYear, selectedMonth, dbInvoicesCache, dbInvoicesByClient, isAllYears, isAllMonths]);
+  }, [expandedClients, dbStatus?.connected, selectedYear, selectedMonth, dbInvoicesCache]);
 
+  // Real-time PostgreSQL search when user types
   useEffect(() => {
     if (dbStatus?.connected && searchQuery.trim()) {
       const timer = setTimeout(() => {
@@ -316,16 +329,19 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     }
   }, [searchQuery, dbStatus?.connected, selectedYear, selectedMonth]);
 
+  // Keep institutions closed by default even when searching, or when month/year changes
   useEffect(() => {
     setExpandedClients(new Set());
   }, [selectedYear, selectedMonth, searchQuery]);
 
+  // Filtered and sorted clients based on active year and month
   const filteredClients = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const baseStofnanir = dbStatus?.connected
       ? (dbInstitutions ?? [])
-      : (monthlyData?.stofnanir || []);
+      : monthlyData.stofnanir;
 
+    // If PostgreSQL is connected and returned search results for this query, use real records!
     if (dbStatus?.connected && q && dbSearchResults && dbSearchResults.length > 0) {
       const clientMap = new Map<string, Invoice[]>();
       for (const inv of dbSearchResults) {
@@ -385,6 +401,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     if (!q) {
       let list = [...baseStofnanir];
 
+      // Sort if user has explicitly clicked a column header
       if (sortColumn) {
         list.sort((a, b) => {
           if (sortColumn === 'client') {
@@ -400,6 +417,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
       return list;
     }
 
+    // When searching: calculate matching invoices and amounts specifically matching the search
     const results: Array<{
       client: string;
       invoiceCount: number;
@@ -410,13 +428,12 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
 
     for (const c of baseStofnanir) {
       const isClientMatch = c.client.toLowerCase().includes(q);
-      const allInvoices = (dbInvoicesByClient[c.client] && dbInvoicesByClient[c.client].length > 0)
-        ? dbInvoicesByClient[c.client]
-        : (dbInvoicesCache[c.client] && dbInvoicesCache[c.client].length > 0)
+      const allInvoices = (dbInvoicesCache[c.client] && dbInvoicesCache[c.client].length > 0)
         ? dbInvoicesCache[c.client]
-        : (monthlyData?.getInvoicesForClient ? monthlyData.getInvoicesForClient(c.client, c.totalAmount) : []);
+        : monthlyData.getInvoicesForClient(c.client, c.totalAmount);
 
       if (isClientMatch) {
+        // Entire institution matches search query
         results.push({
           client: c.client,
           invoiceCount: c.invoiceCount,
@@ -425,14 +442,15 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
           matchingInvoices: allInvoices,
         });
       } else {
-        const matchedInvoices = allInvoices.filter((inv: any) =>
+        // Check if individual suppliers or invoices match within this institution
+        const matchedInvoices = allInvoices.filter(inv =>
           inv.supplier.toLowerCase().includes(q) ||
           inv.id.toLowerCase().includes(q) ||
-          inv.lines?.some((l: any) => l.description.toLowerCase().includes(q))
+          inv.lines?.some(l => l.description.toLowerCase().includes(q))
         );
 
         if (matchedInvoices.length > 0) {
-          const matchedAmount = matchedInvoices.reduce((sum: number, inv: any) => sum + inv.amount, 0);
+          const matchedAmount = matchedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
           results.push({
             client: c.client,
             invoiceCount: matchedInvoices.length,
@@ -444,6 +462,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
       }
     }
 
+    // Sort search results
     if (sortColumn) {
       results.sort((a, b) => {
         if (sortColumn === 'client') {
@@ -457,8 +476,9 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     }
 
     return results;
-  }, [monthlyData, searchQuery, sortColumn, sortAsc, dbStatus?.connected, dbInstitutions, dbSearchResults, dbInvoicesCache, dbInvoicesByClient]);
+  }, [monthlyData, searchQuery, sortColumn, sortAsc, dbStatus?.connected, dbInstitutions, dbSearchResults, dbInvoicesCache]);
 
+  // Aggregate totals
   const totalAmount = useMemo(() => {
     return filteredClients.reduce((acc, c) => acc + c.totalAmount, 0);
   }, [filteredClients]);
@@ -467,7 +487,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     return filteredClients.reduce((acc, c) => acc + c.invoiceCount, 0);
   }, [filteredClients]);
 
-  const toggleClientExpand = async (clientName: string) => {
+  const toggleClientExpand = (clientName: string) => {
     setExpandedClients(prev => {
       const next = new Set(prev);
       if (next.has(clientName)) {
@@ -477,38 +497,6 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
       }
       return next;
     });
-
-    if (!dbInvoicesByClient[clientName]) {
-      setLoadingClients(prev => ({ ...prev, [clientName]: true }));
-      try {
-        const res = await fetchInvoicesFromDb({
-          client: clientName,
-          year: isAllYears ? undefined : String(selectedYear),
-          month: isAllMonths ? undefined : String(selectedMonth),
-          limit: 100
-        });
-        if (res && res.rows && res.rows.length > 0) {
-          const mapped = res.rows.map(r => ({
-            id: r.id || r.invoice_number || `inv-${Math.random()}`,
-            client: r.client || clientName,
-            supplier: r.supplier || 'Óskilgreindur birgir',
-            amount: Number(r.amount) || 0,
-            date: r.date || r.dags || '2025-01-01',
-            lines: (r.lines || []).map(l => ({
-              description: l.description || 'Færsla',
-              amount: Number(l.amount) || 0,
-              is_kredit: l.is_kredit ?? (Number(l.amount) < 0)
-            }))
-          }));
-          setDbInvoicesByClient(prev => ({ ...prev, [clientName]: mapped }));
-          setDbInvoicesCache(prev => ({ ...prev, [clientName]: mapped }));
-        }
-      } catch (e) {
-        console.error('Villa við að sækja reikninga úr gagnagrunni:', e);
-      } finally {
-        setLoadingClients(prev => ({ ...prev, [clientName]: false }));
-      }
-    }
   };
 
   const handleSort = (col: 'client' | 'invoiceCount' | 'totalAmount') => {
@@ -548,6 +536,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     setSelectedInvoices(prev => prev.filter(i => i.reikningsnr !== reikningsnr));
   };
 
+  // Generate legal petition text (Act 140/2012)
   const legalPetitionText = useMemo(() => {
     const selectedClients = Array.from(new Set(selectedInvoices.map(i => i.client))).join(', ');
     const now = new Date();
@@ -604,10 +593,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
     document.body.removeChild(link);
   };
 
-  const topSuppliersData = monthlyData?.topSuppliers?.[activePeriod] || {
-    info: 'Topp birgjar',
-    suppliers: []
-  };
+  const topSuppliersData = monthlyData.topSuppliers[activePeriod];
 
   return (
     <div className="space-y-6">
@@ -751,7 +737,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Quick Year Comparison buttons */}
+        {/* Quick Year Comparison buttons in the exact same style as 'Valið tímabil' */}
         <div className="pt-2.5 border-t border-neutral-200 flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 font-bold text-neutral-900">
             <Calendar className="w-3.5 h-3.5 text-neutral-700" />
@@ -799,6 +785,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
           </div>
         </div>
 
+        {/* Notice if 2026 late month is chosen */}
         {monthlyData.isFutureOrUnpublished && (
           <div className="bg-amber-50 border border-amber-300 p-3 rounded-lg flex items-start gap-2.5 text-xs text-amber-900">
             <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
@@ -811,7 +798,9 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
 
       {/* Main 2-Column Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+        {/* Left Column: Tables & Shock Factor */}
         <section className="space-y-4">
+          {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className={`bg-white border border-neutral-900 p-4 rounded-xl shadow-xs flex flex-col justify-start transition-opacity duration-150 ${isUpdating ? 'opacity-50' : 'opacity-100'}`}>
               <div className="flex items-center justify-between gap-2">
@@ -843,6 +832,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                 </div>
               </div>
 
+              {/* Dashed divider matching the right card */}
               <div className="mt-3 pt-3 border-t border-dashed border-neutral-300 text-xs text-neutral-700 italic leading-relaxed">
                 🗣️ <em>„{fjoldiITexta(totalInvoices)}“</em>
               </div>
@@ -876,6 +866,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                 </div>
               </div>
 
+              {/* The signature "Shock-factor" Icelandic spoken algorithm */}
               <div className="mt-3 pt-3 border-t border-dashed border-neutral-300 text-xs text-neutral-700 italic leading-relaxed">
                 🗣️ <em>„{talaITexta(totalAmount)}“</em>
               </div>
@@ -928,20 +919,12 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredClients.map((client) => {
+                    filteredClients.map((client, idx) => {
                       const isExpanded = expandedClients.has(client.client);
-                      
-                      // HÉR ER GALDURINN: Sækir fyrst úr PostgreSQL minninu (dbInvoicesByClient eða dbInvoicesCache)
-                      const invoicesForClient: any[] = 
-                        (dbInvoicesByClient[client.client] && dbInvoicesByClient[client.client].length > 0)
-                          ? dbInvoicesByClient[client.client]
-                          : (dbInvoicesCache[client.client] && dbInvoicesCache[client.client].length > 0)
-                          ? dbInvoicesCache[client.client]
-                          : ('matchingInvoices' in client && (client as any).matchingInvoices)
-                          ? (client as any).matchingInvoices
-                          : (monthlyData?.getInvoicesForClient ? monthlyData.getInvoicesForClient(client.client, client.totalAmount) : []);
-
-                      const isLoadingThisClient = loadingClients[client.client];
+                      // Invoices specifically for this client in the chosen year and month (or matching subset if searching)
+                      const invoicesForClient = 'matchingInvoices' in client && client.matchingInvoices 
+                        ? client.matchingInvoices 
+                        : monthlyData.getInvoicesForClient(client.client, client.totalAmount);
 
                       return (
                         <React.Fragment key={client.client}>
@@ -983,9 +966,8 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                             const displayInvoices = clientFilter
                               ? rawInvoices.filter(inv =>
                                   inv.supplier.toLowerCase().includes(clientFilter) ||
-                                  (inv.id && inv.id.toLowerCase().includes(clientFilter)) ||
-                                  (inv.reikningsnr && inv.reikningsnr.toLowerCase().includes(clientFilter)) ||
-                                  inv.lines?.some((l: any) => l.description.toLowerCase().includes(clientFilter))
+                                  inv.id.toLowerCase().includes(clientFilter) ||
+                                  inv.lines?.some(l => l.description.toLowerCase().includes(clientFilter))
                                 )
                               : rawInvoices;
 
@@ -1006,11 +988,6 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                       <span className="text-[11px] font-normal text-neutral-500">
                                         ({paginatedInvoices.length} af {displayInvoices.length} birtir)
                                       </span>
-                                      {isLoadingThisClient && (
-                                        <span className="text-blue-600 font-mono text-[11px] flex items-center gap-1 animate-pulse">
-                                          <RefreshCw className="w-3 h-3 animate-spin" /> Sæki úr gagnagrunni...
-                                        </span>
-                                      )}
                                     </div>
                                     
                                     <div className="flex items-center gap-2">
@@ -1059,23 +1036,22 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                       {paginatedInvoices.length === 0 ? (
                                         <tr>
                                           <td colSpan={4} className="p-4 text-center text-neutral-500 italic">
-                                            {isLoadingThisClient ? 'Hleð reikningum úr gagnagrunni...' : `Engir reikningar fundust með síunni „${clientFilter}“.`}
+                                            Engir reikningar fundust með síunni „{clientFilter}“.
                                           </td>
                                         </tr>
                                       ) : (
                                         paginatedInvoices.map(inv => {
-                                          const invoiceId = inv.id || inv.reikningsnr;
-                                          const isAlreadySelected = selectedInvoices.some(i => i.reikningsnr === invoiceId);
+                                          const isAlreadySelected = selectedInvoices.some(i => i.reikningsnr === inv.id);
                                           const q = searchQuery.toLowerCase().trim();
                                           const isSupplierMatch = Boolean(q && (
                                             inv.supplier.toLowerCase().includes(q) || 
-                                            String(invoiceId).toLowerCase().includes(q) || 
-                                            inv.lines?.some((l: any) => l.description.toLowerCase().includes(q))
+                                            inv.id.toLowerCase().includes(q) || 
+                                            inv.lines?.some(l => l.description.toLowerCase().includes(q))
                                           ));
                                           return (
-                                            <React.Fragment key={invoiceId}>
+                                            <React.Fragment key={inv.id}>
                                               <tr className={isSupplierMatch ? 'bg-amber-50/80 hover:bg-amber-100/70' : 'hover:bg-neutral-50/80'}>
-                                                <td className="p-2 font-mono text-neutral-600">{inv.date || inv.dags}</td>
+                                                <td className="p-2 font-mono text-neutral-600">{inv.date}</td>
                                                 <td className="p-2 font-bold text-neutral-900">
                                                   <span>{inv.supplier}</span>
                                                   {isSupplierMatch && (
@@ -1084,7 +1060,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                                     </span>
                                                   )}
                                                 </td>
-                                                <td className="p-2 font-mono text-neutral-500">{invoiceId}</td>
+                                                <td className="p-2 font-mono text-neutral-500">{inv.id}</td>
                                                 <td className="p-2 text-right font-mono font-bold text-neutral-900">
                                                   {isAlreadySelected ? (
                                                     <span className="text-emerald-700 font-bold text-[11px] mr-2">
@@ -1111,7 +1087,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
                                                 <tr className="bg-neutral-50/50">
                                                   <td colSpan={4} className="p-2 pl-6 text-[11px] text-neutral-600">
                                                     <ul className="list-disc pl-4 space-y-0.5">
-                                                      {inv.lines.map((l: any, lIdx: number) => (
+                                                      {inv.lines.map((l, lIdx) => (
                                                         <li key={lIdx} className={l.is_kredit ? 'line-through text-neutral-400' : ''}>
                                                           <span>{l.description}</span> — <strong className="font-mono">{formaTolu(l.amount)} kr.</strong>
                                                           {l.is_kredit && <span className="text-red-600 ml-1 font-bold">(Kreditfært)</span>}
@@ -1235,7 +1211,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
             </div>
 
             <ol className="divide-y divide-neutral-100 text-xs space-y-1">
-              {topSuppliersData.suppliers.map((b: any, bIdx: number) => (
+              {topSuppliersData.suppliers.map((b, bIdx) => (
                 <li key={b.supplier} className="pt-2 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-neutral-100 text-neutral-800 font-mono font-bold text-[10px] flex items-center justify-center border border-neutral-300">
