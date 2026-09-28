@@ -116,23 +116,37 @@ FROM 'C:/Users/Public/reikningar.txt'
 WITH (FORMAT text, DELIMITER E'\\t', NULL 'N');`;
 
   const indexScripts = `-- ============================================================
--- 3. BRÁÐNAUÐSYNLEGIR VÍSAR (INDEXES) FYRIR 0,005 SEK SVARHRAÐA
--- Keyrðu þetta EFTIR COPY skipunina (mun hraðvirkara að búa til vísana eftir á):
+-- 3. BRÁÐNAUÐSYNLEGIR VÍSAR (INDEXES) FYRIR 0,005–0,03 SEK SVARHRAÐA
+-- Keyrðu þetta í Query Tool í pgAdmin 4:
+-- ATH: Ekki nota CONCURRENTLY inni í færslu (transaction block).
 -- ============================================================
 
--- A. Flýtivísir á dagsetningu (fyrir mánaða- og árssíur):
+-- A. Flýtivísir á dagsetningu (fyrir mánaða- og tímabilssíur: dags >= '...'):
 CREATE INDEX IF NOT EXISTS idx_reikningar_dags ON reikningar(dags);
 
--- B. Composite flýtivísar fyrir samantektir stofnana:
+-- B. Fallavísir á ár (BRÁÐNAUÐSYNLEGUR ef vefurinn notar EXTRACT(YEAR FROM dags)):
+-- Án þessa vísis getur PostgreSQL EKKI notað idx_reikningar_dags og tekur 3-8 sek í fullt töfluscan!
+CREATE INDEX IF NOT EXISTS idx_reikningar_ar_extract ON reikningar ((EXTRACT(YEAR FROM dags::timestamp)));
+
+-- C. Trigram GIN flýtivísir fyrir hraðvirka textaleit að styrkjum og framlögum (tegund ~* 'styrk'):
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_reikningar_tegund_trgm ON reikningar USING gin (tegund gin_trgm_ops);
+
+-- D. Composite flýtivísar fyrir samantektir stofnana:
 CREATE INDEX IF NOT EXISTS idx_reikningar_stofnun_dags ON reikningar(stofnun_id, dags);
 
--- C. Composite flýtivísar fyrir samantektir birgja:
+-- E. Composite flýtivísar fyrir samantektir birgja:
 CREATE INDEX IF NOT EXISTS idx_reikningar_birgir_dags ON reikningar(birgi_id, dags);
 
--- D. Keyra ANALYZE svo PostgreSQL Optimizer viti hvernig á að flýta fyrirspurnum:
+-- F. Keyra ANALYZE svo PostgreSQL Optimizer viti hvernig á að nýta vísana:
 ANALYZE reikningar;
 ANALYZE birgjar;
-ANALYZE stofnanir;`;
+ANALYZE stofnanir;
+
+-- G. Staðfesta hvaða vísar eru nú virkir á töflunni:
+SELECT indexname, indexdef, pg_size_pretty(pg_relation_size(indexname::regclass)) AS staerd 
+FROM pg_indexes 
+WHERE tablename = 'reikningar';`;
 
   return (
     <div className="space-y-6">
@@ -262,7 +276,8 @@ ANALYZE stofnanir;`;
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Eftir að <code>COPY</code> er lokið eru engir vísar nema primary key. Keyrðu þetta til að tryggja 0,005 sekúndna leitarhraða.
+                  Eftir að <code>COPY</code> er lokið eru engir vísar nema primary key og leit tekur nokkrar sekúndur. Keyrðu þetta til að ná 0,005–0,03 sekúndna leitarhraða. 
+                  <strong className="text-amber-700 block mt-1">ATH: Ef pgAdmin gefur villu um transaction (SQL state 25001), sleppið orðinu CONCURRENTLY eins og sýnt er hér.</strong>
                 </p>
               </div>
 

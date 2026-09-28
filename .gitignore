@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+*.xlsx
+*.xls
+*.csv
+*.dump
+*.tar.gz
+data/
+gogn/
+docs/
+.pdf

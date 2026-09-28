@@ -14,12 +14,12 @@ interface StatusReportProps {
 export const StatusReport: React.FC<StatusReportProps> = ({ stats }) => {
   const [copied, setCopied] = useState(false);
 
-  const reportDate = '13. september 2026';
+  const reportDate = '22. september 2026';
 
   const fullMarkdownReport = `# RÍKISGÁT — Tæknileg & Stefnumarkandi Stöðuskýrsla
-Dags: ${reportDate} | Útgáfa: 3.2 (Production Release Candidate)
+Dags: ${reportDate} | Útgáfa: 4.0 (Full Production & Launch Readiness)
 Verkefni: Ríkisgát (Gegnsætt.is) — Gagnsæi & Eftirlit með Opinberum Útgjöldum
-Hýsingarvettvangur: Nútímaleg Skýjahýsing (Managed Cloud PostgreSQL & Node.js / Docker)
+Hýsingarvettvangur: Hetzner Cloud (CAX21 ARM64) & Coolify CI/CD í Helsinki/Falkenstein
 
 ---
 
@@ -28,8 +28,6 @@ Verkefnið Ríkisgát hefur náð þeim merka áfanga að vera orðið fullbúi�
 
 Gagnagrunnurinn inniheldur nú **${formaTolu(stats.ar_2017_2025_fjoldi + stats.ar_2026_fjoldi)} reikningsfærslur** sem spanna tímabilið frá 2017 til miðs árs 2026. Með nýrri v3.0 PostgreSQL gagnagrunnshönnun, composite flýtivísum og straumlínulöguðu flokkunarkerfi hefur tekist að lækka fyrirspurnatíma úr mörgum sekúndum niður í **0,005 sekúndur** að meðaltali.
 
-Vefurinn verður hýstur í nútímalegu **skýjaumhverfi (Cloud Infrastructure)** fremur en á hefðbundinni vefhýsingu (eins og 1984.is / cPanel / FTP). Þessi ákvörðun tryggir ótakmarkaðan sveigjanleika, sjálfvirka CI/CD dreifingu með Git, SSL dulkóðun og rekstraröryggi fyrir 18,17 milljónir færslna.
-
 ### Helstu lykiltölur verkefnisins:
 - **Heildarfjöldi reikninga í PostgreSQL:** ${formaTolu(stats.ar_2017_2025_fjoldi + stats.ar_2026_fjoldi)}
 - **Sögulegir reikningar (2017–2025):** ${formaTolu(stats.ar_2017_2025_fjoldi)} (100% klárað og fryst)
@@ -37,9 +35,10 @@ Vefurinn verður hýstur í nútímalegu **skýjaumhverfi (Cloud Infrastructure)
 - **Ríkisstofnanir:** ${stats.stofnanir_fjoldi} stofnanir
 - **Birgjar og þjónustuaðilar:** ${formaTolu(stats.birgjar_fjoldi)} birgjar
 - **Bókhaldstegundir & Flokkun:** 607 heiti straumlínulöguð í 12 aðalflokka (95,86% nákvæm flokkun)
+- **Styrkja- og aðstoðargreining:** Ný greiningareining sem vaktar dulda styrki, rekstrarframlög og „Undir einum hatti“ flokkanir
 - **Gagnagrunnsstærð:** ~4,2 GiB PostgreSQL (með vinnsluminni og flýtivísum)
 - **Svarhraði á vef:** ~5–20 millisekúndur
-- **Hýsingarstefna:** Skýjalausn (Render / Supabase / VPS Cloud) með sjálfvirkri Git-dreifingu
+- **Hýsingarstefna:** Hetzner Cloud CAX21 (~€6/mán) með Coolify og sjálfvirkri Git-dreifingu
 
 ---
 
@@ -62,42 +61,58 @@ Til að tryggja að síur og topplistar vinni án Full Table Scan voru smíðað
 
 ---
 
-## 3. Arkitektúr: Nútíma Skýjahýsing í stað 1984.is / FTP
-Ákvörðun hefur verið tekin um að **hýsa vefinn í skýi** í stað hefðbundinnar deiltrar vefhýsingar (1984.is):
-- **Af hverju ekki 1984.is / cPanel / FTP?**
-  1. *Takmarkað vinnsluminni (RAM):* Deildar hýsingar bjóða oft aðeins upp á 512 MB – 1 GB RAM sem er ófullnægjandi fyrir 18,17 milljón færslna gagnagrunn með virkum flýtivísum í minni.
-  2. *Úrelt vinnuflæði:* Handvirkt FTP flutningsferli er hægfara og villuhætt.
-  3. *Skortur á sjálfvirkri skölun:* Þegar mikil aðsókn verður (t.d. við fréttaflutning eða afhjúpandi greiningar) getur deilt umhverfi fallið niður eða fengið „503 Service Unavailable“.
-- **Skýjalausn (Cloud Infrastructure: Node.js API + Managed PostgreSQL):**
-  - **Git Continuous Deployment (CI/CD):** Hver \`git push\` uppfærir vefinn sjálfkrafa á 60 sekúndum.
-  - **Dedicated Resources:** Gagnagrunnurinn hefur tryggt vinnsluminni fyrir flýtivísa og skyndiminni.
-  - **Sjálfvirkt SSL/HTTPS:** Vottorð endurnýjast sjálfkrafa án handvirkra inngripa.
-  - **Sjálfvirk öryggisafrit:** Skýjaþjónustan tekur daglega afritun óháð staðbundnum tölvum.
+## 3. Arkitektúr: Hetzner Cloud (CAX21) & Coolify í stað 1984.is / FTP
+Ákvörðun hefur verið tekin um að **hýsa vefinn á Hetzner Cloud CAX21 netþjóni með Coolify** í stað hefðbundinnar deiltrar vefhýsingar:
+- **Af hverju Hetzner CAX21 (Helsinki / Finnland eða Falkenstein / Þýskaland)?**
+  1. *Mikil afköst á lágum kostnaði:* 4 vCPU Ampere Altra ARM64, 8 GB vinnsluminni (RAM) og 80 GB NVMe diskur á aðeins ~€6,00 á mánuði.
+  2. *Nægt vinnsluminni:* 8 GB RAM gerir kleift að halda allan 4,2 GiB grunninn og alla vísana í virku skyndiminni (shared_buffers=2GB).
+  3. *Coolify PaaS sjálfvirkni:* Við sérhvert \`git push\` endurbyggir Coolify vefinn og uppfærir á 45 sekúndum án nokkurs niðritíma.
+  4. *Sjálfvirkt SSL/HTTPS:* Let's Encrypt A+ öryggisvottorð endurnýjast sjálfkrafa.
+  5. *Sjálfvirk öryggisafrit:* Innbyggð daglega afritataka í skýinu, auk staðbundinna \`backup.bat\` afrita á fartölvu.
 
 ---
 
-## 4. Lagalegt Verkfærasett: Upplýsingalög nr. 140/2012
-Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhaldstól.
-- Notandi getur valið allt að 5 reikninga með „➕ Senda inn“.
+## 4. Lagalegt Verkfærasett & Upplýsingaréttur (Upplýsingalög nr. 140/2012)
+Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhaldstól fyrir borgara og fjölmiðla:
+- Notandi velur reikninga með „➕ Senda inn“.
 - Kerfið hópar reikninga sjálfkrafa eftir viðkomandi stofnun.
 - Myndar lögformlega beiðni skv. 5. og 17. gr. upplýsingalaga nr. 140/2012 um afhendingu frumreiknings og fylgiskjala.
-- Afritunarhnappur býr til fullfrágenginn texta tilbúinn til sendingar á viðkomandi stofnun.
+- Einn smellur afritar tilbúinn texta eða býr til tölvupóst beint á viðkomandi stofnun.
 
 ---
 
-## 5. Aðkallandi Forgangsverkefni (Næstu 7 dagar)
-1. **Festa lén á ISNIC:** Kaupa og festa \`rikisgat.is\` (ásamt \`gegnsaett.is\` ef laust).
-2. **Stilla Skýjahýsingu (Cloud Setup):** Tengja Git-geymslu við skýjaþjón (Render / Supabase / Cloud VPS), setja upp \`DATABASE_URL\` og flytja PostgreSQL grunninn yfir með \`pg_restore\`.
-3. **Lénatenging við Skýið:** Tengja DNS færslur hjá ISNIC við skýjaþjóninn með sjálfvirku SSL vottorði.
-4. **Tímabundin lendingarsíða:** Koma upp lendingarsíðu í skýinu með kynningu og tölvupóstskráningu fyrir opnun.
-5. **Styrkjaumsókn:** Klára drög að umsókn í Tækniþróunarsjóð / Nýsköpunarsjóð.
+## 5. Kynningarstefna, Fjölmiðlar & Útbreiðsla
+- **Rannsóknarblaðamenn (Heimildin, RÚV, Vísir):** Blaðamenn eyða dögum í Excel-skrár. Ríkisgát gefur þeim leit á 0,005 sekúndum.
+- **Samfélagsmiðlar & Facebook/X:** Sjálfvirk vikuleg uppgjör (stærstu birgjar, hæstu stakir reikningar, óvenjuleg útgjöld).
+- **Styrkja- og aðstoðargreining:** Opnar nýtt sjónarhorn á hvernig opinberu fé er úthlutað til félaga og einkaaðila.
 
 ---
 
-## 6. Áhættumat & Tillögur
-- **Skýjakostnaður vs. Álag:** Skýjalausnir henta fullkomlega þar sem hægt er að byrja smátt (t.d. á hagkvæmu skýjastigi) og stækka auðveldlega ef heimsóknir margfaldast í kjölfar fjölmiðlaumfjöllunar.
-- **Sjálfvirk afritun:** Skýið sér um dagleg afrit, en auk þess er staðbundin \`backup.bat\` skrifta keyrð vikulega á D:\\afrit_rikisgat\\.
-- **Gjaldtaka fyrir stórgögn:** Halda vefgáttinni opinni og ókeypis fyrir almenning en bjóða fyrirtækjum, greinendum og ráðgjöfum greiddan aðgang að heildar CSV útdráttum til að standa undir hýsingarkostnaði.
+## 6. Greining á Mögulegum Styrkjum: „Viltu styrkja okkur?“
+Úttekt á styrktarmöguleikum frá almenningi og notendum:
+- **Áætlaður notendahópur við opnun:** 20.000 – 50.000 virkir einstaklingar á mánuði í kjölfar fjölmiðlaumfjöllunar.
+- **Hlutfall sem styrkir (Conversion Rate):** Reiknað er með 0,3% – 0,8% meðal áhugasamra borgara (venjulegt hlutfall í samfélagsverkefnum).
+- **Áætlaður fjöldi styrktaraðila:** ~100 til 350 einstaklingar sem leggja til mánaðarlega eða staka styrki.
+- **Kostnaður á mánuði:** Netþjónn (Hetzner CAX21) kostar aðeins um 900–1.200 kr./mánuði (~€6).
+- **Niðurstaða:** Aðeins 2–3 einstaklingar sem gefa 500 kr. á mánuði standa strax undir öllum tæknilegum rekstrarkostnaði síðunnar! Allt umframframlag getur runnið í lögfræðiaðstoð við gagnaöflun og námsreynslu krakkanna.
+
+---
+
+## 7. Félagsstofnun & Stjórnarhættir (Krakkakynning & 1. Aðalfundur)
+- **Félagsform:** Almennt félag rekið án hagnaðarmarkmiðs (félagasamtök skráð hjá Skattinum).
+- **Stofnendur & Stjórn:** Feðginin Rúnar Þór Jóhannsson (formaður), Viktor Smári Rúnarsson (fundarstjóri & tæknistjóri), Rakel Anna Rúnarsdóttir (ritari & samskiptastjóri) og Óðinn Rúnarsson (gagnarýnir & gjaldkeri).
+- **Heiðursfélagi nr. 1:** Fyrsta afabarnið (skírt 20. september 2026) — sem áminning um framtíðina.
+- **Heiðursfélagi nr. 2:** **Sigþrúður Guðnadóttir** — samþykkt á 1. aðalfundi fyrir ómetanlegan stuðning, samfylgd og hvatningu.
+- **Faglegur bakhjarl:** Dílajörð ehf. veitir sérfræðiráðgjöf og tryggir vettvang fyrir launaða námsreynslu unga fólksins.
+
+---
+
+## 8. Aðkallandi Forgangsverkefni Næstu Daga
+1. **Undirritun stofnskjala & 1. Aðalfundur:** Kynna verkefnið fyrir krökkunum, lesa stofnskjöl og fá undirskriftir allra stofnenda.
+2. **Skráning hjá Skattinum:** Skila RSK 17.20 (umsókn um kennitölu almenns félags) ásamt samþykktum og stofnfundargerð.
+3. **Stofnun bankareiknings:** Opna frjálsan söfnunarreikning á nýrri kennitölu félagsins fyrir „Viltu styrkja okkur“.
+4. **Hetzner Cloud & Coolify:** Ræsa CAX21 netþjóninn í Helsinki, flytja PostgreSQL grunninn og kveikja á sjálfvirkri Git-dreifingu.
+5. **Lénatenging:** Beina \`rikisgat.is\` og \`gegnsaett.is\` á fasta IP-tölu Hetzner netþjónsins.
 `;
 
   const copyReportToClipboard = () => {
@@ -225,7 +240,7 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           <p>
             Gagnagrunnurinn hefur verið hannaður í <strong>v3.0 PostgreSQL</strong> með 6 tengdum töflum og 
             12 aðalflokkum tegunda. Til að mæta 18,17 milljónum færslna hefur verið mörkuð sú stefna að 
-            <strong> hýsa vefinn í nútímalegu skýjaumhverfi (Managed Cloud)</strong> í stað deiltrar hefðbundinnar vefhýsingar 
+            <strong> hýsa vefinn á Hetzner Cloud (CAX21 ARM64) með Coolify</strong> í Helsinki eða Falkenstein í stað deiltrar hefðbundinnar vefhýsingar 
             (eins og 1984.is). Svarhraði á flóknum samantektum er kominn niður í <strong>0,005–0,02 sekúndur</strong>.
           </p>
         </div>
@@ -234,10 +249,10 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-emerald-900 text-sm">
           <div className="font-bold flex items-center gap-2 mb-1">
             <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-            Lykilniðurstaða: Stefna sett á Skýjahýsingu (Cloud Architecture)
+            Lykilniðurstaða: Stefna sett á Hetzner Cloud CAX21 & Coolify (~€6/mán)
           </div>
           <p className="text-xs text-emerald-800 leading-relaxed">
-            Ákveðið hefur verið að nýta nútíma skýjahýsingu með Git Continuous Deployment (CI/CD) og stýrðum PostgreSQL gagnagrunni í skýinu.
+            Ákveðið hefur verið að nýta Hetzner Cloud (4 vCPU, 8 GB RAM, 80 GB NVMe) með Coolify CI/CD og stýrðum PostgreSQL gagnagrunni í skýinu.
             Þetta útilokar takmarkanir deildra hýsinga (eins og 1984.is/cPanel) hvað varðar vinnsluminni og handvirkt FTP flæði.
           </p>
         </div>
@@ -307,8 +322,8 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
             3
           </div>
           <div>
-            <h3 className="text-lg font-bold text-neutral-900 tracking-tight">Hýsingarstefna: Nútíma Skýjahýsing í stað 1984.is</h3>
-            <p className="text-xs text-neutral-500">Rökstuðningur fyrir því að velja stýrt skýjaumhverfi (Managed Cloud) fyrir 18,17M færslur</p>
+            <h3 className="text-lg font-bold text-neutral-900 tracking-tight">Hýsingarstefna: Hetzner Cloud (CAX21 ARM64) & Coolify í stað 1984.is</h3>
+            <p className="text-xs text-neutral-500">Rökstuðningur fyrir því að velja Hetzner CAX21 í Helsinki og Coolify PaaS fyrir 18,17M færslur</p>
           </div>
         </div>
 
@@ -316,20 +331,20 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           <div className="p-4 bg-emerald-50/60 rounded-xl border border-emerald-200">
             <div className="flex items-center gap-2 font-bold text-neutral-900 mb-2">
               <Server className="w-4 h-4 text-emerald-600" />
-              <span>Nútíma Skýjahýsing (Valin lausn)</span>
+              <span>Hetzner CAX21 & Coolify (Valin lausn — ~€6/mán)</span>
             </div>
             <ul className="space-y-2 text-xs text-neutral-700">
               <li className="flex items-start gap-1.5">
                 <span className="text-emerald-600 font-bold">✓</span>
-                <span><strong>Öflugt vinnsluminni (RAM):</strong> PostgreSQL þarf tryggt vinnsluminni (Buffer Pool / Work Mem) til að halda 18M reikningum og composite flýtivísum í minni fyrir 0,005s svörun.</span>
+                <span><strong>Öflugur vélbúnaður á lágmarksverði:</strong> 4 vCPU Ampere Altra ARM64, 8 GB RAM og 80 GB NVMe diskur í Helsinki á aðeins ~€6 á mánuði.</span>
               </li>
               <li className="flex items-start gap-1.5">
                 <span className="text-emerald-600 font-bold">✓</span>
-                <span><strong>Sjálfvirk Git CI/CD dreifing:</strong> Engin handvirk FTP upphleðsla. Sérhvert <code>git push</code> uppfærir vefinn sjálfkrafa á undir 60 sekúndum.</span>
+                <span><strong>Nóg vinnsluminni (RAM):</strong> 8 GB RAM gerir kleift að halda allan 4,2 GiB grunninn og flýtivísana í virku skyndiminni (shared_buffers) fyrir 0,005s svörun.</span>
               </li>
               <li className="flex items-start gap-1.5">
                 <span className="text-emerald-600 font-bold">✓</span>
-                <span><strong>Sjálfvirk skölun & SSL:</strong> Þolir mikil álagstoppa þegar fréttamiðlar fjalla um vefinn, með innbyggðu sjálfvirku HTTPS vottorði og stöðugum bakenda.</span>
+                <span><strong>Coolify sjálfvirk Git CI/CD dreifing:</strong> Engin handvirk FTP upphleðsla. Sérhvert <code>git push</code> endurbyggir vefinn sjálfkrafa á undir 45 sekúndum.</span>
               </li>
             </ul>
           </div>
@@ -357,7 +372,7 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
         </div>
 
         <p className="text-xs text-neutral-500 italic">
-          Niðurstaða: Færsla á nútímalega skýjahýsingu (t.d. Render, Supabase eða Cloud VPS) tryggir lágmarks niðritíma, fullt rekstraröryggi og framúrskarandi notendaupplifun.
+          Niðurstaða: Færsla á Hetzner Cloud CAX21 með Coolify tryggir lágmarks niðritíma, fullt rekstraröryggi, sjálfvirk SSL vottorð og framúrskarandi notendaupplifun.
         </p>
       </div>
 
@@ -393,60 +408,15 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
         </div>
       </div>
 
-      {/* 5. KAFLI: AÐKALLANDI FORGANGSVERKEFNI NÆSTU 7 DAGA */}
-      <div className="bg-amber-50/70 border-2 border-amber-200 p-6 rounded-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-amber-900 font-black uppercase text-sm tracking-wide">
-            <AlertTriangle className="w-5 h-5 text-amber-700" />
-            <span>Aðkallandi Forgangsverkefni (Klára fyrir þriðjudag)</span>
-          </div>
-          <span className="bg-amber-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded uppercase">
-            Bráðaforgangur
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-          <div className="bg-white p-4 rounded-lg border border-amber-200">
-            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">1</span>
-              ISNIC Lénakaup
-            </div>
-            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
-              Festa lénið <strong>rikisgat.is</strong> (og kanna <strong>gegnsaett.is</strong>) strax áður en fréttamenn eða samkeppnisaðilar fá veður af verkefninu.
-            </p>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-amber-200">
-            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">2</span>
-              Skýjauppsetning (Cloud Hosting)
-            </div>
-            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
-              Tengja Git repository við skýjaþjón (Render / Supabase / VPS), setja inn <code>DATABASE_URL</code> og flytja PostgreSQL grunninn með <code>pg_restore</code>.
-            </p>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-amber-200">
-            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">3</span>
-              Lendingarsíða & Lénatenging
-            </div>
-            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
-              Tengja DNS færslur <strong>rikisgat.is</strong> við skýjaþjóninn með sjálfvirku SSL vottorði og birta kynningu og póstlistaskráningu fyrir opnun.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 6. KAFLI: MARKAÐSSTEFNA & TEKJUMÓDEL */}
+      {/* 5. KAFLI: KYNNINGARSTEFNA, FJÖLMIÐLAR & ÚTBREIÐSLA */}
       <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs space-y-4">
         <div className="flex items-center gap-3 border-b border-neutral-100 pb-3">
           <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-sm">
             5
           </div>
           <div>
-            <h3 className="text-lg font-bold text-neutral-900 tracking-tight">Kynningarstefna, Blaðamenn & Fjármögnun</h3>
-            <p className="text-xs text-neutral-500">Hvernig verkefnið mun ná útbreiðslu og tryggja sjálfbæran rekstur</p>
+            <h3 className="text-lg font-bold text-neutral-900 tracking-tight">Kynningarstefna, Blaðamenn & Fjölmiðlar</h3>
+            <p className="text-xs text-neutral-500">Hvernig verkefnið mun ná gríðarlegri útbreiðslu og skapa umræðu í þjóðfélaginu</p>
           </div>
         </div>
 
@@ -457,38 +427,201 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
               <span>Rannsóknarblaðamenn</span>
             </div>
             <p className="text-neutral-600 leading-relaxed">
-              Blaðamenn á <strong>Heimildinni</strong>, <strong>RÚV</strong> og <strong>Vísi</strong> eyða dögum í að vinna úr Excel-skrám ríkisins.
-              Að gefa þeim leifturhraðvirkt tól með beinum tilvísunum mun veita verkefninu gríðarlega fjölmiðlaumfjöllun.
+              Blaðamenn á <strong>Heimildinni</strong>, <strong>RÚV</strong> og <strong>Vísi</strong> eyða dögum í að vinna úr flóknum opinberum gögnum.
+              Að gefa þeim leifturhraðvirkt tól með beinum tilvísunum mun veita verkefninu gríðarlega fjölmiðlaumfjöllun og virðingu.
             </p>
           </div>
 
           <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1.5">
             <div className="font-bold text-neutral-900 text-sm flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4 text-neutral-700" />
-              <span>Samfélagsmiðlar (X / Twitter)</span>
+              <span>Samfélagsmiðlar & Gagnasjón</span>
             </div>
             <p className="text-neutral-600 leading-relaxed">
-              Sjálfvirkur bot sem tístir vikulega um forvitnilegar tölur (t.d. „Hverjir voru 5 stærstu birgjar ríkisins í síðustu viku?“).
-              Þetta skapar reglulegt líf og veður á samfélagsmiðlum.
+              Vikulegar samantektir og myndrænar birtingar (t.d. „Hverjir voru 5 stærstu birgjar ríkisins í mánuðinum?“) munu vekja athygli 
+              almennings á Facebook, Instagram, TikTok og X.
             </p>
           </div>
 
           <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1.5">
             <div className="font-bold text-neutral-900 text-sm flex items-center gap-1.5">
               <Shield className="w-4 h-4 text-neutral-700" />
-              <span>Styrkir & Gagnasala</span>
+              <span>Styrkja- og aðstoðargreining</span>
             </div>
             <p className="text-neutral-600 leading-relaxed">
-              Sótt verður um nýsköpunarstyrk hjá <strong>Tækniþróunarsjóði</strong>.
-              Grunnvefurinn verður alltaf 100% ókeypis fyrir almenning, en fyrirtæki og greiningaraðilar munu geta keypt heildar CSV útdrætti.
+              Með nýju greiningareiningunni er hægt að sjá dulda styrki, rekstrarframlög og félög sem fá milljarða án hefðbundins útboðs.
             </p>
           </div>
         </div>
       </div>
 
-      {/* 7. KAFLI: ÁHÆTTUGREINING & MÓTVÆGISAÐGERÐIR */}
+      {/* 6. KAFLI: GREINING Á STYRKJUM: „VILTU STYRKJA OKKUR?“ */}
+      <div className="bg-emerald-50/60 border-2 border-emerald-300 p-6 rounded-xl space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-emerald-950 font-black uppercase text-sm tracking-wide">
+            <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">6</span>
+            <span>Greining á Mögulegum Styrkjum: „Viltu styrkja okkur?“</span>
+          </div>
+          <span className="bg-emerald-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded uppercase">
+            Sjálfbær Fjármögnun
+          </span>
+        </div>
+
+        <p className="text-xs text-emerald-900 leading-relaxed">
+          Þegar vefurinn fer á flug og vekur athygli landsmanna verður virkjuð aðgerðin <strong>„Viltu styrkja okkur?“</strong>.
+          Hér er raunhæf greining á því hvað margir gætu styrkt verkefnið og hversu auðvelt er að gera það sjálfbært:
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
+          <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
+            <div className="text-[11px] font-bold text-neutral-500 uppercase">Mánaðarlegir Notendur</div>
+            <div className="text-xl font-black text-neutral-900">20.000 – 50.000</div>
+            <p className="text-[11px] text-neutral-600">Áætlaðir heimsækjendur við opnun og umfjöllun fjölmiðla.</p>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
+            <div className="text-[11px] font-bold text-neutral-500 uppercase">Styrktarhlutfall</div>
+            <div className="text-xl font-black text-emerald-700">0,3% – 0,8%</div>
+            <p className="text-[11px] text-neutral-600">Hefðbundið hlutfall í lýðræðis- og gagnsæisverkefnum (Wikipedia/Archive).</p>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
+            <div className="text-[11px] font-bold text-neutral-500 uppercase">Mögulegir Styrktaraðilar</div>
+            <div className="text-xl font-black text-neutral-900">100 – 350 manns</div>
+            <p className="text-[11px] text-neutral-600">Borgarar sem vilja leggja til 500 – 2.000 kr. á mánuði eða staka upphæð.</p>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
+            <div className="text-[11px] font-bold text-neutral-500 uppercase">Hýsingarkostnaður á mánuði</div>
+            <div className="text-xl font-black text-purple-700">~1.000 kr. (€6)</div>
+            <p className="text-[11px] text-neutral-600">Aðeins <strong>2 styrktaraðilar</strong> duga til að reka allan vefinn í skýinu!</p>
+          </div>
+        </div>
+
+        <div className="p-3 bg-white/80 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <span>
+            <strong>Niðurstaða:</strong> Allt fé umfram lágmarksnetþjónakostnað (~1.000 kr./mán) getur nýst til að greiða krökkunum 
+            laun fyrir efnisvinnslu, rýni og samfélagsmiðla, sem og greiða lögfræðikostnað við kærur á grundvelli upplýsingalaga.
+          </span>
+        </div>
+      </div>
+
+      {/* 7. KAFLI: FJÖLSKYLDAN, STOFNUN FÉLAGSINS & HEIÐURSFÉLAGAR */}
+      <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs space-y-4">
+        <div className="flex items-center gap-3 border-b border-neutral-100 pb-3">
+          <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-sm">
+            7
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900 tracking-tight">Krakkakynning, Stofnskjöl & 1. Aðalfundur</h3>
+            <p className="text-xs text-neutral-500">Stofnun almenns félags, verkaskipting krakkanna og útnefning heiðursfélaga</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-neutral-700 leading-relaxed">
+          Verkefnið er byggt upp sem hugsjónaverkefni fjölskyldunnar. Til að vekja áhuga unga fólksins og gefa þeim raunverulega ábyrgð 
+          og námsreynslu verður haldinn kynningarfundur, farið yfir stofnskjölin og haldinn formlegur 1. aðalfundur.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+            <div className="text-[10px] uppercase font-bold text-neutral-500">Formaður</div>
+            <div className="font-bold text-xs text-neutral-900">Rúnar Þór Jóhannsson</div>
+            <p className="text-[11px] text-neutral-600">Leiðir stefnu, gagnavinnslu og lögfræðilegt aðhald.</p>
+          </div>
+
+          <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+            <div className="text-[10px] uppercase font-bold text-neutral-500">Tæknistjóri & Fundarstjóri</div>
+            <div className="font-bold text-xs text-neutral-900">Viktor Smári Rúnarsson</div>
+            <p className="text-[11px] text-neutral-600">Stýrir fundum, hugbúnaðarþróun og tækniumhverfi.</p>
+          </div>
+
+          <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+            <div className="text-[10px] uppercase font-bold text-neutral-500">Ritari & Samskiptastjóri</div>
+            <div className="font-bold text-xs text-neutral-900">Rakel Anna Rúnarsdóttir</div>
+            <p className="text-[11px] text-neutral-600">Fundargerðir, skráningar, fræðsla og miðlun.</p>
+          </div>
+
+          <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+            <div className="text-[10px] uppercase font-bold text-neutral-500">Gagnarýnir & Gjaldkeri</div>
+            <div className="font-bold text-xs text-neutral-900">Óðinn Rúnarsson</div>
+            <p className="text-[11px] text-neutral-600">Rýnir í talnagögn og tekur að sér embætti gjaldkera.</p>
+          </div>
+        </div>
+
+        {/* Heiðursfélagar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1">
+            <div className="font-bold text-xs text-rose-950 flex items-center gap-1.5">
+              <span>👶</span>
+              <span>Heiðursfélagi nr. 1 — Fyrsta afabarnið</span>
+            </div>
+            <p className="text-[11px] text-neutral-700 leading-relaxed">
+              Skírt 20. september 2026. Ævilangur heiðursfélagi án atkvæðisréttar sem táknmynd um að gagnsæi í dag er fyrir komandi kynslóðir.
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1">
+            <div className="font-bold text-xs text-amber-950 flex items-center gap-1.5">
+              <span>🏅</span>
+              <span>Heiðursfélagi nr. 2 — Sigþrúður Guðnadóttir</span>
+            </div>
+            <p className="text-[11px] text-neutral-700 leading-relaxed">
+              Kjörin á 1. aðalfundi félagsins í virðingarskyni fyrir ómetanlegan stuðning, tryggð og hvatningu. Án almenns atkvæðisréttar en fer með <strong>oddaatkvæðisrétt</strong> til að skera úr málum ef atkvæði falla jafnt í stjórn.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 8. KAFLI: AÐKALLANDI FORGANGSVERKEFNI NÆSTU DAGA */}
+      <div className="bg-amber-50/70 border-2 border-amber-200 p-6 rounded-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-amber-900 font-black uppercase text-sm tracking-wide">
+            <AlertTriangle className="w-5 h-5 text-amber-700" />
+            <span>Aðkallandi Forgangsverkefni (Klára fyrir næstu viku)</span>
+          </div>
+          <span className="bg-amber-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded uppercase">
+            Bráðaforgangur
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          <div className="bg-white p-4 rounded-lg border border-amber-200">
+            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">1</span>
+              Kynning, Stofnskjöl & Undirskriftir
+            </div>
+            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
+              Halda kynninguna með krökkunum, lesa stofnskjölin, fá undirskriftir allra fjögurra stofnenda og ganga frá stofnfundargerð.
+            </p>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border border-amber-200">
+            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">2</span>
+              Skráning hjá Skattinum & Bankareikningur
+            </div>
+            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
+              Senda inn eyðublað RSK 17.20 um nýja kennitölu almenns félags og opna sérstakan söfnunarreikning fyrir styrki.
+            </p>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border border-amber-200">
+            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">3</span>
+              Hetzner Cloud CAX21 & Coolify
+            </div>
+            <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
+              Ræsa CAX21 netþjóninn í Helsinki, tengja Git repository við Coolify og beina <code>rikisgat.is</code> léninu á netþjóninn.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 9. KAFLI: ÁHÆTTUGREINING & MÓTVÆGISAÐGERÐIR */}
       <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs space-y-3">
-        <h3 className="text-base font-bold text-neutral-900">Áhættumat & Tæknilegar Tillögur</h3>
+        <h3 className="text-base font-bold text-neutral-900">9. Áhættumat & Tæknilegar Tillögur</h3>
         
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">

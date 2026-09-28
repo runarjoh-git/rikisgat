@@ -2,41 +2,95 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Building2, Search, ArrowUpDown, ChevronRight, ChevronDown, Plus, 
   Trash2, Copy, Check, Download, Calendar, Shield, ExternalLink, RefreshCw,
-  AlertCircle, CheckCircle2, Zap, FileText, Sparkles, Filter, X, Database
+  AlertCircle, CheckCircle2, Zap, FileText, Sparkles, Filter, X, Database, 
+  Hourglass, ShieldAlert, Mail, Store, Receipt, Landmark, Layers, ListFilter
 } from 'lucide-react';
-import { Stofnun, Invoice, SelectedInvoiceItem, TopSupplier } from '../types';
+import { Stofnun, Invoice, SelectedInvoiceItem } from '../types';
 import { getMonthlyPortalData, ISLENSKIR_MANUDIR } from '../data/mockData';
 import { formaTolu, stuttTala, formaDags } from '../utils/icelandicFormatters';
-import { checkDbStatus, fetchInstitutionsFromDb, fetchInvoicesFromDb, DbStatusResponse, RealInvoiceRow } from '../services/api';
+import { 
+  checkDbStatus, 
+  fetchInstitutionsFromDb, 
+  fetchInvoicesFromDb, 
+  fetchInstitutionSuppliersFromDb,
+  DbStatusResponse, 
+  RealInvoiceRow 
+} from '../services/api';
+
+const ALL_YEARS_LIST = ['2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017'];
+const ALL_MONTHS_NUMS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 
 interface SearchResultItem {
   client: string;
   invoiceCount: number;
+  lineCount?: number;
   totalAmount: number;
+  isInstitutionMatch: boolean;
   matchingInvoices: Invoice[];
-  isLineSearchMatch: boolean;
 }
 
 interface AdvancedSearchSubTabProps {
   onOpenTasksTab?: () => void;
+  onOpenWhistleblower?: (invoiceData?: { institution?: string; supplier?: string; invoiceNumber?: string }) => void;
 }
 
-export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
-  // Ítarleg leit: leitarskilyrði eru tóm að sjálfgefnu
-  const [selectedYear, setSelectedYear] = useState<string>('all');
-  const [selectedMonth, setSelectedMonth] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = ({
+  onOpenWhistleblower
+}) => {
+  // Ítarleg leit í Gagnagreiningu: Sjálfgefið tómt ár og mánuður - leit hefst ekki fyrr en leitarskilyrði eru valin
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+
+  // 3 Sérhæfðir leitardálkar:
+  // 1. Stofnun (Kaupandi)
+  // 2. Byrgir (Seljandi)
+  // 3. Lína í reikningi (Bókhaldslykill / Tegund)
+  const [searchClient, setSearchClient] = useState<string>('');
+  const [searchSupplier, setSearchSupplier] = useState<string>('');
+  const [searchLine, setSearchLine] = useState<string>('');
+
+  // Sýn: Stofnana- og birgjasýn (stigveldi) eða Beinir reikningar (flatur reikningalisti)
+  const [resultsViewMode, setResultsViewMode] = useState<'hierarchy' | 'flatInvoices'>('hierarchy');
+
+  // Athugum hvort leitarskilyrði hafi verið slegin inn eða tímabil valið
+  const hasSearchFilters = Boolean(searchClient.trim() || searchSupplier.trim() || searchLine.trim());
+  const hasSearchCriteria = Boolean(hasSearchFilters || selectedYear || selectedMonth);
+
+  // Sorting
   const [sortColumn, setSortColumn] = useState<'client' | 'invoiceCount' | 'totalAmount' | null>(null);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   // PostgreSQL real-data state
   const [dbStatus, setDbStatus] = useState<DbStatusResponse | null>(null);
-  const [dbInstitutions, setDbInstitutions] = useState<Array<{ id: number; client: string; invoiceCount: number; totalAmount: number }> | null>(null);
-  const [dbInvoicesByClient, setDbInvoicesByClient] = useState<Record<string, Invoice[]>>({});
+  const [dbInstitutions, setDbInstitutions] = useState<Array<{ id: number; client: string; invoiceCount: number; lineCount?: number; totalAmount: number }> | null>(null);
+  const [dbSearchInstitutions, setDbSearchInstitutions] = useState<Array<{ id: number; client: string; invoiceCount: number; lineCount?: number; totalAmount: number }> | null>(null);
   const [dbSearchResults, setDbSearchResults] = useState<RealInvoiceRow[] | null>(null);
+
+  // Expanded clients & local filters inside client drawers
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+  const [clientFilterQueries, setClientFilterQueries] = useState<Record<string, string>>({});
+
+  // Suppliers caching per institution: clientName -> Array<{ supplier, invoiceCount, lineCount, totalAmount }>
+  const [dbSuppliersCache, setDbSuppliersCache] = useState<Record<string, Array<{ supplier: string; invoiceCount: number; lineCount?: number; totalAmount: number }>>>({});
+  const [loadingSuppliersForClient, setLoadingSuppliersForClient] = useState<Record<string, boolean>>({});
+
+  // Expanded suppliers & local filters inside supplier rows
+  const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
+  const [supplierInvoiceFilters, setSupplierInvoiceFilters] = useState<Record<string, string>>({});
+
+  // Invoices cache per supplier: `${clientName}:::${supplierName}` -> Invoice[]
+  const [supplierInvoicesCache, setSupplierInvoicesCache] = useState<Record<string, Invoice[]>>({});
+  const [supplierLoadingInvoices, setSupplierLoadingInvoices] = useState<Record<string, boolean>>({});
+  const [supplierVisibleLimits, setSupplierVisibleLimits] = useState<Record<string, number>>({});
+
+  // Selected invoices for Act 140/2012 petition
+  const [selectedInvoices, setSelectedInvoices] = useState<SelectedInvoiceItem[]>([]);
+  const [copiedLegalText, setCopiedLegalText] = useState(false);
+
+  // Loading states
   const [isLoadingDb, setIsLoadingDb] = useState(false);
+  const [isSearchingDb, setIsSearchingDb] = useState(false);
 
   // Check DB status on mount
   useEffect(() => {
@@ -45,46 +99,215 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     });
   }, []);
 
-  // Fetch institutions from DB when year/month changes
+  // Visual flicker when changing filters
   useEffect(() => {
-    if (dbStatus?.connected) {
+    setIsUpdating(true);
+    const t = setTimeout(() => setIsUpdating(false), 120);
+    return () => clearTimeout(t);
+  }, [selectedYear, selectedMonth]);
+
+  // Available year and month definitions
+  const isAllYears = selectedYear === 'all' || selectedYear === '';
+  const isAllMonths = selectedMonth === 'all' || selectedMonth === '';
+
+  const activeYears = useMemo(() => {
+    if (selectedYear && selectedYear !== 'all') return [selectedYear];
+    return ALL_YEARS_LIST;
+  }, [selectedYear]);
+
+  const activeMonths = useMemo(() => {
+    if (selectedMonth && selectedMonth !== 'all') return [selectedMonth];
+    return ALL_MONTHS_NUMS;
+  }, [selectedMonth]);
+
+  // Aggregate monthly data for offline/mock fallback (only when search criteria are entered)
+  const fallbackPortalData = useMemo(() => {
+    if (!hasSearchCriteria || dbStatus?.connected) {
+      return { stofnanir: [], getInvoicesForClient: () => [] };
+    }
+
+    const instMap = new Map<string, { id: number; client: string; invoiceCount: number; lineCount?: number; totalAmount: number }>();
+    const invMap = new Map<string, Invoice[]>();
+
+    for (const yr of activeYears) {
+      for (const mo of activeMonths) {
+        const d = getMonthlyPortalData(yr, mo);
+        for (const st of d.stofnanir) {
+          const current = instMap.get(st.client);
+          if (!current) {
+            instMap.set(st.client, {
+              id: st.id,
+              client: st.client,
+              invoiceCount: st.invoiceCount,
+              lineCount: st.invoiceCount,
+              totalAmount: st.totalAmount
+            });
+          } else {
+            current.invoiceCount += st.invoiceCount;
+            if (current.lineCount !== undefined) current.lineCount += st.invoiceCount;
+            current.totalAmount += st.totalAmount;
+          }
+
+          const invs = d.getInvoicesForClient(st.client, st.totalAmount);
+          const existing = invMap.get(st.client) || [];
+          if (existing.length < 60) {
+            invMap.set(st.client, [...existing, ...invs.slice(0, 15)]);
+          }
+        }
+      }
+    }
+
+    return {
+      stofnanir: Array.from(instMap.values()),
+      getInvoicesForClient: (clientName: string) => invMap.get(clientName) || []
+    };
+  }, [hasSearchCriteria, dbStatus?.connected, activeYears, activeMonths]);
+
+  // Fetch base institutions from DB when year/month changes (and search inputs are empty and criteria are entered)
+  useEffect(() => {
+    if (!hasSearchCriteria) {
+      setDbInstitutions(null);
+      setIsLoadingDb(false);
+      return;
+    }
+
+    if (dbStatus?.connected && !hasSearchFilters) {
       setIsLoadingDb(true);
+      setDbSuppliersCache({});
+      setExpandedSuppliers(new Set());
+      setSupplierInvoicesCache({});
+      setSupplierVisibleLimits({});
       fetchInstitutionsFromDb(selectedYear, selectedMonth).then(res => {
-        if (res.rows) {
+        if (res.rows && res.rows.length > 0) {
           setDbInstitutions(res.rows);
+        } else {
+          setDbInstitutions([]);
         }
       }).catch(() => {
         setDbInstitutions([]);
       }).finally(() => setIsLoadingDb(false));
-    } else {
+    } else if (!dbStatus?.connected) {
       setDbInstitutions(null);
+      setIsLoadingDb(false);
     }
-  }, [selectedYear, selectedMonth, dbStatus?.connected]);
+  }, [selectedYear, selectedMonth, dbStatus?.connected, hasSearchFilters, hasSearchCriteria]);
 
-  // Real-time PostgreSQL search when user types in search query
+  // Real-time debounced PostgreSQL search across the 3 specialized columns
   useEffect(() => {
-    if (dbStatus?.connected && searchQuery.trim()) {
+    if (!hasSearchCriteria) {
+      setIsSearchingDb(false);
+      setDbSearchInstitutions(null);
+      setDbSearchResults(null);
+      return;
+    }
+
+    if (dbStatus?.connected && hasSearchFilters) {
+      setIsSearchingDb(true);
       const timer = setTimeout(() => {
-        setIsLoadingDb(true);
-        fetchInvoicesFromDb({
-          search: searchQuery.trim(),
-          year: selectedYear,
-          month: selectedMonth,
-          limit: 300
-        }).then(res => {
-          if (res.rows) {
-            setDbSearchResults(res.rows);
+        const clientVal = searchClient.trim();
+        const supplierVal = searchSupplier.trim();
+        const lineVal = searchLine.trim();
+
+        Promise.all([
+          fetchInstitutionsFromDb(selectedYear, selectedMonth, undefined, {
+            client: clientVal,
+            supplier: supplierVal,
+            line: lineVal
+          }),
+          fetchInvoicesFromDb({
+            client: clientVal,
+            supplier: supplierVal,
+            line: lineVal,
+            year: selectedYear,
+            month: selectedMonth,
+            limit: 200
+          })
+        ]).then(([instRes, invRes]) => {
+          const instRows = instRes?.rows || [];
+          const invRows = invRes?.rows || [];
+
+          setDbSearchInstitutions(instRows);
+          setDbSearchResults(invRows);
+
+          // Ef fáar stofnanir finnast (t.d. 1–3), opnum við þær sjálfkrafa svo notandi sjái birgja og reikninga strax
+          if (instRows.length > 0 && instRows.length <= 4) {
+            const autoExp = new Set<string>();
+            for (const st of instRows) {
+              autoExp.add(st.client);
+            }
+            setExpandedClients(autoExp);
           }
-        }).finally(() => setIsLoadingDb(false));
+        }).catch(() => {
+          setDbSearchInstitutions([]);
+          setDbSearchResults([]);
+        }).finally(() => {
+          setIsSearchingDb(false);
+        });
       }, 250);
       return () => clearTimeout(timer);
     } else {
+      setIsSearchingDb(false);
+      setDbSearchInstitutions(null);
       setDbSearchResults(null);
     }
-  }, [searchQuery, dbStatus?.connected, selectedYear, selectedMonth]);
+  }, [searchClient, searchSupplier, searchLine, dbStatus?.connected, selectedYear, selectedMonth, hasSearchCriteria, hasSearchFilters]);
 
-  // Fetch invoices for expanded clients from PostgreSQL
-  const toggleClientExpansion = async (clientName: string) => {
+  // Reset expanded drawers and filters when search or period changes
+  useEffect(() => {
+    setExpandedClients(new Set());
+    setClientFilterQueries({});
+    setExpandedSuppliers(new Set());
+    setDbSuppliersCache({});
+    setSupplierInvoicesCache({});
+  }, [selectedYear, selectedMonth, searchClient, searchSupplier, searchLine]);
+
+  // Fetch suppliers list from PostgreSQL for expanded clients, incorporating searchSupplier and searchLine
+  const fetchSuppliersForClient = async (clientName: string) => {
+    if (loadingSuppliersForClient[clientName]) return;
+    setLoadingSuppliersForClient(prev => ({ ...prev, [clientName]: true }));
+    try {
+      const res = await fetchInstitutionSuppliersFromDb({
+        client: clientName,
+        year: selectedYear,
+        month: selectedMonth,
+        supplier: searchSupplier.trim(),
+        line: searchLine.trim()
+      });
+      const suppliers = res.suppliers || [];
+      setDbSuppliersCache(prev => ({ ...prev, [clientName]: suppliers }));
+
+      // Ef leitað var að ákveðnum birgi eða aðeins 1 birgir fannst, opnum við hann sjálfkrafa
+      if (searchSupplier.trim() || suppliers.length === 1) {
+        const targetSup = searchSupplier.trim()
+          ? suppliers.find(s => s.supplier.toLowerCase().includes(searchSupplier.trim().toLowerCase())) || suppliers[0]
+          : suppliers[0];
+        if (targetSup) {
+          const supKey = `${clientName}:::${targetSup.supplier}`;
+          setExpandedSuppliers(prev => new Set(prev).add(supKey));
+          fetchInvoicesForSupplier(clientName, targetSup.supplier, 0, 25);
+        }
+      }
+    } catch {
+      setDbSuppliersCache(prev => ({ ...prev, [clientName]: [] }));
+    } finally {
+      setLoadingSuppliersForClient(prev => ({ ...prev, [clientName]: false }));
+    }
+  };
+
+  // Pre-fetch suppliers for open clients
+  useEffect(() => {
+    if (dbStatus?.connected && expandedClients.size > 0) {
+      for (const clientName of expandedClients) {
+        if (dbSuppliersCache[clientName] === undefined && !loadingSuppliersForClient[clientName]) {
+          fetchSuppliersForClient(clientName);
+        }
+      }
+    }
+  }, [expandedClients, dbStatus?.connected, selectedYear, selectedMonth, searchSupplier, searchLine]);
+
+  // Toggle client drawer expansion
+  const toggleClientExpand = (clientName: string) => {
+    const willExpand = !expandedClients.has(clientName);
     setExpandedClients(prev => {
       const next = new Set(prev);
       if (next.has(clientName)) {
@@ -95,99 +318,172 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       return next;
     });
 
-    if (dbStatus?.connected && !dbInvoicesByClient[clientName]) {
-      try {
-        const res = await fetchInvoicesFromDb({
-          client: clientName,
-          year: selectedYear,
-          month: selectedMonth,
-          limit: 150
-        });
-        if (res && res.rows && res.rows.length > 0) {
-          const mapped: Invoice[] = res.rows.map(r => ({
-            id: r.id || `inv-${Math.random()}`,
-            client: r.client || clientName,
-            supplier: r.supplier || 'Ótilgreindur birgir',
-            amount: Number(r.amount) || 0,
-            date: formaDags(r.date, selectedYear) || '2025-01-01',
-            lines: (r.lines || []).map(l => ({
-              description: l.description || 'Færsla',
-              amount: Number(l.amount) || 0,
-              is_kredit: l.is_kredit ?? (Number(l.amount) < 0)
-            }))
-          }));
-          setDbInvoicesByClient(prev => ({ ...prev, [clientName]: mapped }));
-        }
-      } catch (e) {
-        console.error('Villa við að sækja reikninga úr gagnagrunni:', e);
+    if (willExpand && dbStatus?.connected && dbSuppliersCache[clientName] === undefined && !loadingSuppliersForClient[clientName]) {
+      fetchSuppliersForClient(clientName);
+    }
+  };
+
+  // Toggle supplier accordion and fetch initial 25 invoices sorted by date ASC (frá byrjun mánaðar)
+  const toggleSupplierExpand = (clientName: string, supplierName: string, totalCount?: number) => {
+    const key = `${clientName}:::${supplierName}`;
+    const willExpand = !expandedSuppliers.has(key);
+    setExpandedSuppliers(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+
+    if (willExpand) {
+      if (!supplierInvoicesCache[key] || supplierInvoicesCache[key].length === 0) {
+        fetchInvoicesForSupplier(clientName, supplierName, 0, 25);
+      }
+      if (!supplierVisibleLimits[key]) {
+        setSupplierVisibleLimits(prevLim => ({ ...prevLim, [key]: 25 }));
       }
     }
   };
 
-  // Selected invoices for Act 140/2012
-  const [selectedInvoices, setSelectedInvoices] = useState<SelectedInvoiceItem[]>([]);
-  const [copiedLegalText, setCopiedLegalText] = useState(false);
-
-  // Available year and month definitions
-  const isAllYears = selectedYear === 'all';
-  const isAllMonths = selectedMonth === 'all';
-
-  const activeYears = useMemo(() => {
-    if (!isAllYears) return [parseInt(selectedYear, 10)];
-    return [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017];
-  }, [isAllYears, selectedYear]);
-
-  const activeMonths = useMemo(() => {
-    if (!isAllMonths) return [parseInt(selectedMonth, 10)];
-    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  }, [isAllMonths, selectedMonth]);
-
-  // Aggregate monthly data and cache invoices across time range (fallback when DB is offline)
-  const { institutionsMap, clientInvoicesMap } = useMemo(() => {
-    const instMap = new Map<string, { id?: number; client: string; invoiceCount: number; totalAmount: number }>();
-    const invMap = new Map<string, Invoice[]>();
-
-    for (const yr of activeYears) {
-      const monthsForYear = (yr === 2026 && isAllMonths) ? [1, 2, 3, 4, 5, 6] : activeMonths;
-      for (const mo of monthsForYear) {
-        const portal = getMonthlyPortalData(yr, mo);
-        for (const st of (portal?.stofnanir || [])) {
-          const prev = instMap.get(st.client);
-          if (prev) {
-            prev.invoiceCount += st.invoiceCount;
-            prev.totalAmount += st.totalAmount;
-          } else {
-            instMap.set(st.client, {
-              id: st.id,
-              client: st.client,
-              invoiceCount: st.invoiceCount,
-              totalAmount: st.totalAmount
-            });
+  // Fetch invoices for a supplier (25 at a time, sorted ASC from beginning of month, filtered by searchLine)
+  const fetchInvoicesForSupplier = async (clientName: string, supplierName: string, offset: number = 0, limit: number = 25) => {
+    const key = `${clientName}:::${supplierName}`;
+    setSupplierLoadingInvoices(prev => ({ ...prev, [key]: true }));
+    try {
+      if (dbStatus?.connected) {
+        const res = await fetchInvoicesFromDb({
+          client: clientName,
+          supplier: supplierName,
+          line: searchLine.trim(),
+          year: selectedYear,
+          month: selectedMonth,
+          limit,
+          offset,
+          sort: 'asc'
+        });
+        const newInvoices: Invoice[] = (res.rows || []).map(r => ({
+          id: r.id,
+          client: clientName,
+          supplier: r.supplier || supplierName,
+          amount: r.amount,
+          date: formaDags(r.date, selectedYear),
+          lines: (r.lines || []).map(l => ({
+            description: l.description,
+            amount: l.amount,
+            is_kredit: l.is_kredit ?? (l.amount < 0)
+          }))
+        }));
+        setSupplierInvoicesCache(prev => {
+          const existing = offset > 0 ? (prev[key] || []) : [];
+          if (offset === 0) {
+            return {
+              ...prev,
+              [key]: newInvoices
+            };
           }
-
-          // Invoices collection for client
-          const existingInvs = invMap.get(st.client) || [];
-          const generatedInvs = portal?.getInvoicesForClient ? portal.getInvoicesForClient(st.client, st.totalAmount) : [];
-          
-          for (const g of generatedInvs) {
-            if (!existingInvs.some(e => e.id === g.id)) {
-              existingInvs.push(g);
-            }
-          }
-          invMap.set(st.client, existingInvs);
-        }
+          const nextInvoices = [...existing.slice(0, offset), ...newInvoices];
+          return {
+            ...prev,
+            [key]: nextInvoices
+          };
+        });
+        setSupplierVisibleLimits(prev => {
+          const currentVis = prev[key] || 25;
+          const newTotalLoaded = offset + newInvoices.length;
+          return {
+            ...prev,
+            [key]: Math.max(currentVis, newTotalLoaded)
+          };
+        });
+      } else {
+        const clientInvoices = fallbackPortalData.getInvoicesForClient(clientName);
+        const supplierInvs = clientInvoices
+          .filter(inv => {
+            const supMatch = inv.supplier.toLowerCase() === supplierName.toLowerCase();
+            const lineMatch = !searchLine.trim() || 
+              inv.id.toLowerCase().includes(searchLine.toLowerCase().trim()) ||
+              inv.lines?.some(l => l.description.toLowerCase().includes(searchLine.toLowerCase().trim()));
+            return supMatch && lineMatch;
+          })
+          .sort((a, b) => (a.date > b.date ? 1 : -1));
+        setSupplierInvoicesCache(prev => ({
+          ...prev,
+          [key]: supplierInvs
+        }));
       }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSupplierLoadingInvoices(prev => ({ ...prev, [key]: false }));
     }
+  };
 
-    return { institutionsMap: instMap, clientInvoicesMap: invMap };
-  }, [activeYears, activeMonths, isAllMonths]);
+  // Load next 25 invoices for a supplier
+  const handleLoadMoreForSupplier = (clientName: string, supplierName: string, totalCount: number) => {
+    const key = `${clientName}:::${supplierName}`;
+    if (supplierLoadingInvoices[key]) return;
 
-  // Visual flicker when changing filters
-  useEffect(() => {
-    setIsUpdating(true);
-    const t = setTimeout(() => setIsUpdating(false), 120);
-    return () => clearTimeout(t);
-  }, [selectedYear, selectedMonth]);
+    const currentLimit = supplierVisibleLimits[key] || 25;
+    const currentInvoices = supplierInvoicesCache[key] || [];
+    const nextLimit = Math.min(currentLimit + 25, totalCount);
+
+    if (dbStatus?.connected && currentInvoices.length < totalCount && currentInvoices.length < nextLimit) {
+      fetchInvoicesForSupplier(clientName, supplierName, currentInvoices.length, 25);
+    } else {
+      setSupplierVisibleLimits(prev => ({ ...prev, [key]: nextLimit }));
+    }
+  };
+
+  // Explicit manual search trigger (Enter key or Leita button)
+  const handleExecuteSearch = async () => {
+    if (!hasSearchCriteria || !dbStatus?.connected) return;
+    setIsSearchingDb(true);
+    try {
+      if (hasSearchFilters) {
+        const clientVal = searchClient.trim();
+        const supplierVal = searchSupplier.trim();
+        const lineVal = searchLine.trim();
+
+        const [instRes, invRes] = await Promise.all([
+          fetchInstitutionsFromDb(selectedYear, selectedMonth, undefined, {
+            client: clientVal,
+            supplier: supplierVal,
+            line: lineVal
+          }),
+          fetchInvoicesFromDb({
+            client: clientVal,
+            supplier: supplierVal,
+            line: lineVal,
+            year: selectedYear,
+            month: selectedMonth,
+            limit: 200
+          })
+        ]);
+        const instRows = instRes?.rows || [];
+        setDbSearchInstitutions(instRows);
+        setDbSearchResults(invRes?.rows || []);
+
+        if (instRows.length > 0 && instRows.length <= 4) {
+          const autoExp = new Set<string>();
+          for (const st of instRows) {
+            autoExp.add(st.client);
+          }
+          setExpandedClients(autoExp);
+        }
+      } else {
+        setDbSearchInstitutions(null);
+        setDbSearchResults(null);
+        const instRes = await fetchInstitutionsFromDb(selectedYear, selectedMonth);
+        setDbInstitutions(instRes?.rows || []);
+      }
+    } catch (err) {
+      console.error('Villa við leit:', err);
+    } finally {
+      setIsSearchingDb(false);
+    }
+  };
 
   // Sort handler
   const handleSort = (column: 'client' | 'invoiceCount' | 'totalAmount') => {
@@ -195,55 +491,60 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       setSortAsc(!sortAsc);
     } else {
       setSortColumn(column);
-      setSortAsc(false);
+      setSortAsc(column === 'client');
     }
   };
 
-  // Search and filter logic with PostgreSQL support
-  const filteredResults = useMemo<SearchResultItem[]>(() => {
-    const q = searchQuery.toLowerCase().trim();
+  // Filtered and sorted clients list (Reconciliation and display logic)
+  const filteredClients = useMemo<SearchResultItem[]>(() => {
+    if (!hasSearchCriteria) {
+      return [];
+    }
 
-    // 1. If PostgreSQL returned direct search results for this query, use real records!
-    if (dbStatus?.connected && q && dbSearchResults && dbSearchResults.length > 0) {
-      const clientMap = new Map<string, Invoice[]>();
-      for (const inv of dbSearchResults) {
-        const cName = inv.client || 'Ótilgreind stofnun';
-        const list = clientMap.get(cName) || [];
-        list.push({
+    const clientQuery = searchClient.toLowerCase().trim();
+    const supplierQuery = searchSupplier.toLowerCase().trim();
+    const lineQuery = searchLine.toLowerCase().trim();
+
+    const baseStofnanir = dbStatus?.connected
+      ? (dbInstitutions ?? [])
+      : fallbackPortalData.stofnanir;
+
+    // 1. Ef leitað er í raunverulegum PostgreSQL gagnagrunni með leitarsíum
+    if (dbStatus?.connected && hasSearchFilters && dbSearchInstitutions !== null) {
+      const results: SearchResultItem[] = dbSearchInstitutions.map(st => {
+        const matchingSampleInvoices = (dbSearchResults || []).filter(
+          inv => (inv.client || '').toLowerCase() === st.client.toLowerCase()
+        ).map(inv => ({
           id: inv.id,
-          client: cName,
+          client: inv.client || st.client,
           supplier: inv.supplier,
           amount: inv.amount,
-          date: inv.date,
+          date: formaDags(inv.date, selectedYear),
           lines: (inv.lines || []).map(l => ({
             description: l.description,
             amount: l.amount,
             is_kredit: l.is_kredit ?? (l.amount < 0)
           }))
-        });
-        clientMap.set(cName, list);
-      }
+        }));
 
-      const results: SearchResultItem[] = [];
-      for (const [cName, invs] of clientMap.entries()) {
-        const total = invs.reduce((sum, i) => sum + i.amount, 0);
-        results.push({
-          client: cName,
-          invoiceCount: invs.length,
-          totalAmount: total,
-          matchingInvoices: invs,
-          isLineSearchMatch: true
-        });
-      }
+        return {
+          client: st.client,
+          invoiceCount: st.invoiceCount,
+          lineCount: st.lineCount || st.invoiceCount,
+          totalAmount: st.totalAmount,
+          isInstitutionMatch: clientQuery ? st.client.toLowerCase().includes(clientQuery) : true,
+          matchingInvoices: matchingSampleInvoices
+        };
+      });
 
       if (sortColumn) {
         results.sort((a, b) => {
           if (sortColumn === 'client') {
             return sortAsc ? a.client.localeCompare(b.client, 'is') : b.client.localeCompare(a.client, 'is');
-          } else if (sortColumn === 'invoiceCount') {
-            return sortAsc ? a.invoiceCount - b.invoiceCount : b.invoiceCount - a.invoiceCount;
           } else {
-            return sortAsc ? a.totalAmount - b.totalAmount : b.totalAmount - a.totalAmount;
+            const valA = a[sortColumn];
+            const valB = b[sortColumn];
+            return sortAsc ? valA - valB : valB - valA;
           }
         });
       } else {
@@ -253,165 +554,196 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       return results;
     }
 
-    // 2. Base institutions list: PostgreSQL if connected, otherwise fallback
-    const allStofnanir: Array<{ id?: number; client: string; invoiceCount: number; totalAmount: number }> = 
-      dbStatus?.connected
-        ? (dbInstitutions ?? [])
-        : Array.from(institutionsMap.values());
-
-    if (!q) {
-      const list: SearchResultItem[] = allStofnanir.map(st => {
-        const invs = dbInvoicesByClient[st.client] || clientInvoicesMap.get(st.client) || [];
-        return {
-          client: st.client,
-          invoiceCount: st.invoiceCount,
-          totalAmount: st.totalAmount,
-          matchingInvoices: invs,
-          isLineSearchMatch: false
-        };
-      });
+    if (!hasSearchFilters) {
+      let list: SearchResultItem[] = baseStofnanir.map(c => ({
+        client: c.client,
+        invoiceCount: c.invoiceCount,
+        lineCount: 'lineCount' in c ? (c.lineCount || c.invoiceCount) : c.invoiceCount,
+        totalAmount: c.totalAmount,
+        isInstitutionMatch: false,
+        matchingInvoices: []
+      }));
 
       if (sortColumn) {
         list.sort((a, b) => {
           if (sortColumn === 'client') {
             return sortAsc ? a.client.localeCompare(b.client, 'is') : b.client.localeCompare(a.client, 'is');
-          } else if (sortColumn === 'invoiceCount') {
-            return sortAsc ? a.invoiceCount - b.invoiceCount : b.invoiceCount - a.invoiceCount;
           } else {
-            return sortAsc ? a.totalAmount - b.totalAmount : b.totalAmount - a.totalAmount;
+            const valA = a[sortColumn];
+            const valB = b[sortColumn];
+            return sortAsc ? valA - valB : valB - valA;
           }
         });
+      } else {
+        list.sort((a, b) => b.totalAmount - a.totalAmount);
       }
 
       return list;
     }
 
-    // 3. In-memory filter on institutions and available cached invoices
+    // Mock fallback when offline
     const results: SearchResultItem[] = [];
+    for (const c of baseStofnanir) {
+      const isClientMatch = !clientQuery || c.client.toLowerCase().includes(clientQuery);
+      if (!isClientMatch && clientQuery) continue;
 
-    for (const st of allStofnanir) {
-      const allInvs = dbInvoicesByClient[st.client] || clientInvoicesMap.get(st.client) || [];
-
-      // Filter invoices where at least one line matches OR supplier matches OR id matches
-      const matchingInvoices = allInvs.filter(inv => {
-        const matchesLine = inv.lines?.some(l => l.description.toLowerCase().includes(q));
-        const matchesSupplier = inv.supplier.toLowerCase().includes(q);
-        const matchesId = inv.id.toLowerCase().includes(q);
-        return matchesLine || matchesSupplier || matchesId;
+      const allInvoices = fallbackPortalData.getInvoicesForClient(c.client);
+      const matchedInvoices = allInvoices.filter(inv => {
+        const matchSup = !supplierQuery || inv.supplier.toLowerCase().includes(supplierQuery);
+        const matchLine = !lineQuery || 
+          inv.id.toLowerCase().includes(lineQuery) ||
+          inv.lines?.some(l => l.description.toLowerCase().includes(lineQuery));
+        return matchSup && matchLine;
       });
 
-      if (matchingInvoices.length > 0) {
-        const sumMatched = matchingInvoices.reduce((acc, i) => acc + i.amount, 0);
+      if (!hasSearchFilters || matchedInvoices.length > 0) {
+        const matchedAmount = matchedInvoices.length > 0
+          ? matchedInvoices.reduce((sum, inv) => sum + inv.amount, 0)
+          : c.totalAmount;
         results.push({
-          client: st.client,
-          invoiceCount: matchingInvoices.length,
-          totalAmount: sumMatched,
-          matchingInvoices,
-          isLineSearchMatch: true
-        });
-      } else if (st.client.toLowerCase().includes(q)) {
-        // Entire institution name matched, show all its invoices
-        results.push({
-          client: st.client,
-          invoiceCount: allInvs.length || st.invoiceCount,
-          totalAmount: st.totalAmount,
-          matchingInvoices: allInvs,
-          isLineSearchMatch: false
+          client: c.client,
+          invoiceCount: matchedInvoices.length > 0 ? new Set(matchedInvoices.map(i => i.id)).size : c.invoiceCount,
+          lineCount: matchedInvoices.length > 0 ? matchedInvoices.length : ('lineCount' in c ? (c.lineCount || c.invoiceCount) : c.invoiceCount),
+          totalAmount: matchedAmount,
+          isInstitutionMatch: isClientMatch,
+          matchingInvoices: matchedInvoices,
         });
       }
     }
 
-    // Sort results
     if (sortColumn) {
       results.sort((a, b) => {
         if (sortColumn === 'client') {
           return sortAsc ? a.client.localeCompare(b.client, 'is') : b.client.localeCompare(a.client, 'is');
-        } else if (sortColumn === 'invoiceCount') {
-          return sortAsc ? a.invoiceCount - b.invoiceCount : b.invoiceCount - a.invoiceCount;
         } else {
-          return sortAsc ? a.totalAmount - b.totalAmount : b.totalAmount - a.totalAmount;
+          const valA = a[sortColumn];
+          const valB = b[sortColumn];
+          return sortAsc ? valA - valB : valB - valA;
         }
       });
     }
 
     return results;
-  }, [institutionsMap, clientInvoicesMap, searchQuery, sortColumn, sortAsc, dbStatus?.connected, dbInstitutions, dbSearchResults, dbInvoicesByClient]);
+  }, [hasSearchCriteria, hasSearchFilters, searchClient, searchSupplier, searchLine, sortColumn, sortAsc, dbStatus?.connected, dbInstitutions, dbSearchInstitutions, dbSearchResults, fallbackPortalData, selectedYear]);
 
-  // Aggregate totals of active search
-  const totalFilteredInvoices = useMemo(() => {
-    return filteredResults.reduce((acc, r) => acc + r.invoiceCount, 0);
-  }, [filteredResults]);
+  // Aggregate metrics
+  const totalAmount = useMemo(() => {
+    return filteredClients.reduce((acc, c) => acc + c.totalAmount, 0);
+  }, [filteredClients]);
 
-  const totalFilteredAmount = useMemo(() => {
-    return filteredResults.reduce((acc, r) => acc + r.totalAmount, 0);
-  }, [filteredResults]);
+  const totalInvoices = useMemo(() => {
+    return filteredClients.reduce((acc, c) => acc + c.invoiceCount, 0);
+  }, [filteredClients]);
 
-  // Open first result by default when searching so user immediately sees matching lines
-  useEffect(() => {
-    if (searchQuery.trim().length > 2 && filteredResults.length > 0) {
-      setExpandedClients(new Set([filteredResults[0].client]));
+  const isDataLoading = Boolean(isLoadingDb || isSearchingDb || isUpdating);
+
+  // Act 140/2012 add invoice
+  const handleAddInvoiceToRequest = (inv: Invoice, firstDesc: string) => {
+    if (selectedInvoices.length >= 5) {
+      alert('Hámark 5 reikningar í einni beiðni skv. verklagsreglum.');
+      return;
     }
-  }, [searchQuery, filteredResults]);
-
-  // Add invoice to Act 140/2012 request
-  const handleSelectInvoice = (inv: Invoice, lineDesc?: string) => {
-    const item: SelectedInvoiceItem = {
+    if (selectedInvoices.some(i => i.reikningsnr === inv.id)) {
+      return;
+    }
+    const newItem: SelectedInvoiceItem = {
+      reikningsnr: inv.id,
       client: inv.client,
       supplier: inv.supplier,
-      reikningsnr: inv.id,
-      dags: inv.date,
-      lysing: lineDesc || (inv.lines && inv.lines.length > 0 ? inv.lines[0].description : 'Ýmis útgjöld'),
       amount: inv.amount,
-      row_id: `${inv.id}-${Date.now()}`
+      dags: inv.date,
+      lysing: firstDesc || 'Almennur rekstur'
     };
-
-    if (!selectedInvoices.some(i => i.reikningsnr === inv.id)) {
-      setSelectedInvoices(prev => [...prev, item]);
-    }
+    setSelectedInvoices(prev => [...prev, newItem]);
   };
 
-  const handleRemoveSelectedInvoice = (reikningsnr: string) => {
+  const handleRemoveInvoiceFromRequest = (reikningsnr: string) => {
     setSelectedInvoices(prev => prev.filter(i => i.reikningsnr !== reikningsnr));
   };
 
-  // Copy legal text for Act 140/2012
-  const copyLegalEmail = () => {
+  const copyLegalText = () => {
     if (selectedInvoices.length === 0) return;
     const invList = selectedInvoices.map((inv, idx) => 
-      `${idx + 1}. Stofnun: ${inv.client} | Birgir: ${inv.supplier} | Reikningsnr: ${inv.reikningsnr} | Dagsett: ${inv.dags} | Upphæð: ${formaTolu(inv.amount)} kr.`
+      `${idx + 1}. Reikningsnúmer: ${inv.reikningsnr} | Birgir: ${inv.supplier} | Stofnun: ${inv.client} | Dags: ${inv.dags} | Upphæð: ${formaTolu(inv.amount)} kr.`
     ).join('\n');
 
-    const text = `Efni: Upplýsingabeiðni á grundvelli upplýsingalaga nr. 140/2012\n\nTil viðkomandi stjórnvalds,\n\nHér með er óskað eftir afriti af eftirfarandi reikningum ásamt fylgiskjölum á grundvelli upplýsingalaga nr. 140/2012:\n\n${invList}\n\nÓskað er eftir rafrænu afriti á pdf formi sem fyrst.\n\nMeð kveðju,\n[Nafn sendanda]`;
+    const text = `Efni: Upplýsingabeiðni á grundvelli upplýsingalaga nr. 140/2012
+
+Til viðkomandi stjórnvalds,
+
+Hér með er óskað eftir afriti af eftirfarandi bókuðum reikningum og öllum fylgigögnum þeirra (t.d. sundurliðunum, verksamningum og tímaskýrslum) á grundvelli upplýsingalaga nr. 140/2012:
+
+${invList}
+
+Óskað er eftir því að gögnin verði afhent rafrænt á þetta netfang svo fljótt sem auðið er, sbr. 17. gr. upplýsingalaga.
+
+Með kveðju,
+[Nafn sendanda / Ríkisgát aðgangur]`;
 
     navigator.clipboard.writeText(text);
     setCopiedLegalText(true);
     setTimeout(() => setCopiedLegalText(false), 2500);
   };
 
-  // CSV Export of current view
-  const handleExportCSV = () => {
-    const headers = ['Stofnun', 'Fjöldi reikninga', 'Heildarupphæð (ISK)', 'Valið tímabil'];
-    const timeLabel = `${isAllYears ? 'Öll ár (2017-2026)' : selectedYear} - ${isAllMonths ? 'Allir mánuðir' : ISLENSKIR_MANUDIR[parseInt(selectedMonth, 10)]}`;
-    
-    const rows = filteredResults.map(r => [
-      `"${r.client.replace(/"/g, '""')}"`,
-      r.invoiceCount,
-      r.totalAmount,
-      `"${timeLabel}"`
-    ]);
+  const emailMailtoUrl = useMemo(() => {
+    if (selectedInvoices.length === 0) return '#';
+    const invList = selectedInvoices.map((inv, idx) => 
+      `${idx + 1}. Reikningsnr: ${inv.reikningsnr} | Birgir: ${inv.supplier} | Stofnun: ${inv.client} | Upphæð: ${formaTolu(inv.amount)} kr.`
+    ).join('%0D%0A');
 
-    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const subject = encodeURIComponent(`Upplýsingabeiðni skv. upplýsingalögum 140/2012 - ${selectedInvoices[0]?.client || 'Ríkisstofnun'}`);
+    const body = `Efni: Upplýsingabeiðni á grundvelli upplýsingalaga nr. 140/2012%0D%0A%0D%0AHér með er óskað eftir afriti af eftirfarandi reikningum:%0D%0A${invList}%0D%0A%0D%0AÓskað er eftir rafrænni afhendingu gagna svo fljótt sem auðið er.`;
+
+    return `mailto:postur@stjornarradid.is?subject=${subject}&body=${body}`;
+  }, [selectedInvoices]);
+
+  // CSV Export handler
+  const handleExportCSV = () => {
+    if (resultsViewMode === 'flatInvoices' && dbSearchResults && dbSearchResults.length > 0) {
+      // Flytja út staka reikninga
+      const headers = ['Dags', 'Stofnun', 'Birgir', 'Reikningsnr', 'Upphaed_ISK', 'Lina_Tegund'];
+      const rows = dbSearchResults.map(inv => [
+        `"${formaDags(inv.date, selectedYear)}"`,
+        `"${(inv.client || '').replace(/"/g, '""')}"`,
+        `"${(inv.supplier || '').replace(/"/g, '""')}"`,
+        `"${(inv.numer || inv.id || '').replace(/"/g, '""')}"`,
+        inv.amount,
+        `"${(inv.description || '').replace(/"/g, '""')}"`
+      ]);
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `rikisgat-reikningar-${selectedYear || 'oll-ar'}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    const headers = ['Kaupandi', 'Fjoldi_reikninga', 'Heildarupphaed_ISK', 'Ar', 'Manudur'];
+    const rows = filteredClients.map(c => [
+      `"${c.client.replace(/"/g, '""')}"`,
+      c.invoiceCount,
+      c.totalAmount,
+      isAllYears ? 'Oll_ar' : selectedYear,
+      isAllMonths ? 'Allir_manudir' : selectedMonth
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `rikisgat_itarleg_leit_${selectedYear}_${selectedMonth}.csv`);
+    link.href = url;
+    const yearPart = isAllYears ? 'oll-ar' : selectedYear;
+    const monthPart = isAllMonths ? 'allir-manudir' : `m${selectedMonth}`;
+    link.setAttribute('download', `rikisgat-itarleg-leit-${yearPart}-${monthPart}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Helper to highlight matching keyword in text
+  // Keyword highlighter helper
   const highlightMatch = (text: string, query: string) => {
     if (!query.trim()) return <span>{text}</span>;
     const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
@@ -430,98 +762,83 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
     );
   };
 
-  const sampleKeywords = [
-    'bílaleigubíl',
-    'bílaleiga',
-    'tölvubúnaður',
-    'Ístak hf.',
-    'Veritas',
-    'dísilolía',
-    'öryggisgæsla',
-    'Canvas'
-  ];
+  // Active filter description summary
+  const activeSearchSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (searchClient.trim()) parts.push(`🏛️ Stofnun: „${searchClient.trim()}“`);
+    if (searchSupplier.trim()) parts.push(`🏢 Byrgir: „${searchSupplier.trim()}“`);
+    if (searchLine.trim()) parts.push(`🧾 Lína: „${searchLine.trim()}“`);
+    return parts.join(' + ');
+  }, [searchClient, searchSupplier, searchLine]);
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-neutral-900 text-white p-5 sm:p-6 rounded-xl border border-neutral-800 shadow-xs space-y-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-            <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
-              Ítarleg Leitardálkur &amp; Línuleit
-            </span>
+      {/* Search Header / Filter Controls */}
+      <section className="bg-white p-5 rounded-xl border border-neutral-200 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200 pb-3">
+          <div>
+            <h2 className="text-base font-black text-neutral-900 flex items-center gap-2">
+              <Search className="w-5 h-5 text-neutral-800" />
+              <span>Sérhæfð Leit í Gagnagreiningu</span>
+            </h2>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Leitaðu samtímis eða stakt eftir <strong>Stofnun</strong>, <strong>Byrgja</strong> og <strong>Línu á reikningi</strong> (bókhaldslykli).
+            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
-              dbStatus?.connected
-                ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-            }`}>
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{dbStatus?.connected ? `PostgreSQL: Tengt (${dbStatus.totalRows?.toLocaleString('is-IS')} færslur)` : 'PostgreSQL: Ótengt'}</span>
-            </span>
-            {isLoadingDb && (
-              <span className="text-[10px] text-neutral-400 font-mono flex items-center gap-1 animate-pulse">
-                <RefreshCw className="w-3 h-3 animate-spin text-neutral-400" /> Leita í PostgreSQL...
+          {/* Database indicator badge */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {dbStatus?.connected ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                PostgreSQL rauntenging virk (18,17M)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-300">
+                <Database className="w-3 h-3 text-neutral-500" />
+                Staðbundið sniðmát
               </span>
             )}
           </div>
         </div>
-        <h2 className="text-xl font-black tracking-tight">
-          Ítarleg Leit í Öllum Reikningum og Bókhaldslínum (2017–2026)
-        </h2>
-        <p className="text-xs text-neutral-300 max-w-3xl leading-relaxed">
-          Leitardálkurinn er alltaf í <strong>Breiðri Leit</strong>. Þú getur leitað samtímis eftir birgi, stofnun og 
-          <strong> nákvæmum texta í línum á reikningum</strong> (t.d. ef leitað er að <em>„bílaleigubíl“</em> birtast 
-          eingöngu þeir reikningar sem innihalda þá tilteknu reikningslínu).
-        </p>
-      </div>
 
-      {/* Persistent Search Bar (Like Forsíða, with no 'Valið tímabil' buttons) */}
-      <section className="bg-white border border-neutral-900 p-4 sm:p-5 rounded-xl shadow-xs space-y-4">
-        <div className="flex flex-wrap items-end gap-4">
-          {/* Year Dropdown - Always includes 'Öll ár' */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="advArVal" className="text-[11px] font-black uppercase text-neutral-700 tracking-wider">
+        {/* Tímabil og Leitaraðgerðir (Ár, Mánuður og Aðgerðahnappar) */}
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Ár selector */}
+          <div className="flex flex-col gap-1 w-36">
+            <label htmlFor="advYearSelect" className="text-[11px] font-black uppercase text-neutral-700 tracking-wider">
               Ár:
             </label>
             <div className="relative">
               <select
-                id="advArVal"
+                id="advYearSelect"
                 value={selectedYear}
                 onChange={e => setSelectedYear(e.target.value)}
-                className="appearance-none bg-neutral-50 border border-neutral-300 rounded-lg px-3 py-2 pr-8 text-xs font-bold text-neutral-900 focus:border-neutral-900 focus:outline-hidden cursor-pointer"
+                className="w-full appearance-none bg-neutral-50 border border-neutral-300 rounded-lg px-3 py-2 pr-8 text-xs font-bold text-neutral-900 focus:border-neutral-900 focus:outline-hidden cursor-pointer shadow-2xs"
               >
+                <option value="">-- Veldu ár --</option>
                 <option value="all">🌟 Öll ár (2017–2026)</option>
-                <option value="2026">2026 (Jan–Jún)</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
-                <option value="2022">2022</option>
-                <option value="2021">2021</option>
-                <option value="2020">2020</option>
-                <option value="2019">2019</option>
-                <option value="2018">2018</option>
-                <option value="2017">2017</option>
+                {ALL_YEARS_LIST.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
               </select>
               <ChevronDown className="w-4 h-4 text-neutral-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
-          {/* Month Dropdown - Always includes 'Allir mánuðir' */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="advManudurVal" className="text-[11px] font-black uppercase text-neutral-700 tracking-wider">
+          {/* Mánuður selector */}
+          <div className="flex flex-col gap-1 w-44">
+            <label htmlFor="advMonthSelect" className="text-[11px] font-black uppercase text-neutral-700 tracking-wider">
               Mánuður:
             </label>
             <div className="relative">
               <select
-                id="advManudurVal"
+                id="advMonthSelect"
                 value={selectedMonth}
                 onChange={e => setSelectedMonth(e.target.value)}
-                className="appearance-none bg-neutral-50 border border-neutral-300 rounded-lg px-3 py-2 pr-8 text-xs font-bold text-neutral-900 focus:border-neutral-900 focus:outline-hidden cursor-pointer"
+                className="w-full appearance-none bg-neutral-50 border border-neutral-300 rounded-lg px-3 py-2 pr-8 text-xs font-bold text-neutral-900 focus:border-neutral-900 focus:outline-hidden cursor-pointer shadow-2xs"
               >
+                <option value="">-- Veldu mánuð --</option>
                 <option value="all">🌟 Allir mánuðir (1–12)</option>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                   <option key={m} value={String(m)}>
@@ -533,70 +850,242 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
             </div>
           </div>
 
-          {/* Search Input Field */}
-          <div className="flex-1 min-w-[260px] flex flex-col gap-1">
-            <label htmlFor="advSearchInput" className="text-[11px] font-black uppercase text-neutral-700 tracking-wider flex items-center justify-between">
-              <span>Leita að birgi, stofnun eða línu á reikningi:</span>
-              {searchQuery && (
-                <span className="text-emerald-700 font-bold lowercase text-[10px]">
-                  Línuleit virk
-                </span>
+          {/* Aðgerðahnappar */}
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={handleExecuteSearch}
+              disabled={isDataLoading || !hasSearchCriteria}
+              className="px-5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title={hasSearchCriteria ? 'Keyra leit á völdum skilyrðum' : 'Veldu ár/mánuð eða sláðu inn leitarskilyrði til að leita'}
+            >
+              {isDataLoading ? (
+                <>
+                  <Hourglass className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  <span>Sæki...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Leita í gagnagrunni</span>
+                </>
               )}
-            </label>
-            <div className="relative flex items-center">
-              <Search className="w-4 h-4 text-neutral-400 absolute left-3 pointer-events-none" />
-              <input
-                id="advSearchInput"
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Dæmi: bílaleigubíl, tölvubúnaður, Ístak, Veritas..."
-                className="w-full pl-9 pr-8 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-xs font-semibold focus:border-neutral-900 focus:bg-white focus:outline-hidden transition"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 text-neutral-400 hover:text-neutral-700 p-0.5"
-                  title="Hreinsa leit"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
+            </button>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleExportCSV}
-              className="px-3.5 py-2 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              disabled={filteredClients.length === 0}
+              className="px-3.5 py-2 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-40"
               title="Flytja út niðurstöður á CSV sniði"
             >
               <Download className="w-3.5 h-3.5 text-neutral-700" />
               <span>Sækja CSV</span>
             </button>
+
+            {hasSearchCriteria && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedYear('');
+                  setSelectedMonth('');
+                  setSearchClient('');
+                  setSearchSupplier('');
+                  setSearchLine('');
+                  setDbInstitutions(null);
+                  setDbSearchInstitutions(null);
+                  setDbSearchResults(null);
+                  setExpandedClients(new Set());
+                  setExpandedSuppliers(new Set());
+                }}
+                className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Hreinsa öll leitarskilyrði og tæma leitarglugga"
+              >
+                <X className="w-3.5 h-3.5 text-neutral-600" />
+                <span>Hreinsa allt</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Quick Keyword Test Badges */}
+        {/* 3 Sérhæfðir Leitardálkar (Stofnun, Byrgir, Línu í reikning) */}
+        <div className="pt-2 border-t border-neutral-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Dálkur 1: Stofnun */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="searchClientField" className="text-[11px] font-black uppercase text-neutral-800 tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>1. Stofnun (Kaupandi)</span>
+                </span>
+                {searchClient && (
+                  <span className="text-blue-700 font-bold lowercase text-[10px]">
+                    Sía virk
+                  </span>
+                )}
+              </label>
+              <div className="relative flex items-center">
+                <Building2 className="w-4 h-4 text-neutral-400 absolute left-3 pointer-events-none" />
+                <input
+                  id="searchClientField"
+                  type="text"
+                  value={searchClient}
+                  onChange={e => setSearchClient(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleExecuteSearch();
+                  }}
+                  placeholder="Dæmi: Utanríkisráðuneyti, Landspítali..."
+                  className="w-full pl-9 pr-8 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-xs font-semibold focus:border-neutral-900 focus:bg-white focus:outline-hidden transition shadow-2xs"
+                />
+                {searchClient && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchClient('')}
+                    className="absolute right-2.5 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                    title="Hreinsa stofnun"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <span className="text-[10px] text-neutral-500">
+                Sía aðeins eftir kaupanda / ríkisaðila
+              </span>
+            </div>
+
+            {/* Dálkur 2: Byrgir */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="searchSupplierField" className="text-[11px] font-black uppercase text-neutral-800 tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Store className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>2. Byrgir (Seljandi)</span>
+                </span>
+                {searchSupplier && (
+                  <span className="text-emerald-700 font-bold lowercase text-[10px]">
+                    Sía virk
+                  </span>
+                )}
+              </label>
+              <div className="relative flex items-center">
+                <Store className="w-4 h-4 text-neutral-400 absolute left-3 pointer-events-none" />
+                <input
+                  id="searchSupplierField"
+                  type="text"
+                  value={searchSupplier}
+                  onChange={e => setSearchSupplier(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleExecuteSearch();
+                  }}
+                  placeholder="Dæmi: Wise Lausnir, Veritas, Olís, Ístak..."
+                  className="w-full pl-9 pr-8 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-xs font-semibold focus:border-neutral-900 focus:bg-white focus:outline-hidden transition shadow-2xs"
+                />
+                {searchSupplier && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchSupplier('')}
+                    className="absolute right-2.5 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                    title="Hreinsa birgja"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <span className="text-[10px] text-neutral-500">
+                Sía aðeins eftir fyrirtæki sem sendir reikninginn
+              </span>
+            </div>
+
+            {/* Dálkur 3: Lína í reikningi */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="searchLineField" className="text-[11px] font-black uppercase text-neutral-800 tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-purple-600" />
+                  <span>3. Línu í Reikning (Bókhaldslykill)</span>
+                </span>
+                {searchLine && (
+                  <span className="text-purple-700 font-bold lowercase text-[10px]">
+                    Sía virk
+                  </span>
+                )}
+              </label>
+              <div className="relative flex items-center">
+                <Receipt className="w-4 h-4 text-neutral-400 absolute left-3 pointer-events-none" />
+                <input
+                  id="searchLineField"
+                  type="text"
+                  value={searchLine}
+                  onChange={e => setSearchLine(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleExecuteSearch();
+                  }}
+                  placeholder="Dæmi: Risna, Spítalamatur, Tölvubúnaður..."
+                  className="w-full pl-9 pr-8 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-xs font-semibold focus:border-neutral-900 focus:bg-white focus:outline-hidden transition shadow-2xs"
+                />
+                {searchLine && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchLine('')}
+                    className="absolute right-2.5 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                    title="Hreinsa línu"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <span className="text-[10px] text-neutral-500">
+                Sía eftir bókhaldslykli, vörulýsingu eða tegund
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Flýtidæmi úr raunverulegri notkun */}
         <div className="flex items-center gap-1.5 pt-1 flex-wrap text-[11px]">
-          <span className="text-neutral-500 font-bold">Prófa leitarorð í línum:</span>
-          {sampleKeywords.map(kw => (
-            <button
-              key={kw}
-              type="button"
-              onClick={() => setSearchQuery(kw)}
-              className={`px-2 py-0.5 rounded border text-[11px] font-bold transition cursor-pointer ${
-                searchQuery.toLowerCase() === kw.toLowerCase()
-                  ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                  : 'bg-neutral-50 hover:bg-neutral-200 text-neutral-700 border-neutral-200'
-              }`}
-            >
-              {kw}
-            </button>
-          ))}
+          <span className="text-neutral-500 font-bold">Flýtidæmi úr notendabeiðni:</span>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchClient('Utanríkisráðuneyti');
+              setSearchSupplier('Wise Lausnir');
+              setSearchLine('');
+            }}
+            className="px-2.5 py-1 bg-neutral-50 hover:bg-neutral-200 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <span>💡 Dæmi 1: Utanríkisráðuneyti + Wise Lausnir</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchClient('Utanríkisráðuneyti');
+              setSearchSupplier('');
+              setSearchLine('Risna');
+            }}
+            className="px-2.5 py-1 bg-neutral-50 hover:bg-neutral-200 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <span>💡 Dæmi 2: Utanríkisráðuneyti + Risna</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchClient('Landspítali');
+              setSearchSupplier('');
+              setSearchLine('Spítalamatur');
+            }}
+            className="px-2.5 py-1 bg-neutral-50 hover:bg-neutral-200 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <span>💡 Dæmi 3: Landspítali + Spítalamatur</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchClient('Samgöngustofa');
+              setSearchSupplier('Bílaleiga');
+              setSearchLine('');
+            }}
+            className="px-2.5 py-1 bg-neutral-50 hover:bg-neutral-200 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <span>💡 Dæmi 4: Samgöngustofa + Bílaleiga</span>
+          </button>
         </div>
       </section>
 
@@ -604,25 +1093,39 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
           <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
-            Reikningar í Leitarniðurstöðu
+            Reikningar í leit
           </div>
-          <div className={`text-2xl font-black text-neutral-900 mt-1 transition-opacity ${isUpdating ? 'opacity-30' : 'opacity-100'}`}>
-            {formaTolu(totalFilteredInvoices)}
+          <div className="text-2xl font-black text-neutral-900 mt-1">
+            {hasSearchCriteria ? formaTolu(totalInvoices) : '—'}
           </div>
-          <div className="text-[11px] text-neutral-500 mt-0.5">
-            {searchQuery ? `Reikningar sem uppfylla „${searchQuery}“` : 'Allir reikningar á tímabili'}
+          <div className="text-xs text-neutral-600 font-medium mt-0.5">
+            {!hasSearchCriteria 
+              ? 'Leit hefst þegar skilyrði eru sett inn' 
+              : hasSearchFilters
+                ? `Reikningar sem uppfylla leitarskilyrðin`
+                : isAllYears && isAllMonths
+                  ? 'Allir reikningar ríkisins (2017–2026)'
+                  : isAllYears
+                    ? `Öll ár (${selectedMonth}. mán)`
+                    : isAllMonths
+                      ? `Allt árið ${selectedYear}`
+                      : `${selectedMonth}. mán ${selectedYear}`}
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
           <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
-            Heildarupphæð í Leitarniðurstöðu
+            Samanlögð upphæð í leit
           </div>
-          <div className={`text-2xl font-black text-emerald-700 mt-1 transition-opacity ${isUpdating ? 'opacity-30' : 'opacity-100'}`}>
-            {formaTolu(totalFilteredAmount)} kr.
+          <div className="text-2xl font-black text-neutral-900 mt-1">
+            {hasSearchCriteria ? `${formaTolu(totalAmount)} kr.` : '—'}
           </div>
-          <div className="text-[11px] text-neutral-500 mt-0.5">
-            {searchQuery ? `Samanlögð upphæð samsvarandi reikninga` : 'Heildarútgjöld tímabilsins'}
+          <div className="text-xs text-neutral-600 font-medium mt-0.5">
+            {!hasSearchCriteria 
+              ? 'Tóm leitargluggi (bíður eftir leitarorðum)' 
+              : hasSearchFilters
+                ? 'Heildarkostnaður síuðu færslanna'
+                : 'Heildargreiðslur ríkisins á völdu tímabili'}
           </div>
         </div>
 
@@ -631,276 +1134,749 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
             Stofnanir &amp; PostgreSQL Flýtivísir
           </div>
           <div className="text-base font-black text-neutral-900 mt-1 flex items-center gap-2">
-            <span>{filteredResults.length} stofnanir fundust</span>
+            <span>{hasSearchCriteria ? `${filteredClients.length} stofnanir fundust` : 'Sláðu inn leitarskilyrði eða veldu tímabil'}</span>
           </div>
           <div className="text-[11px] text-emerald-700 font-mono font-bold mt-0.5 flex items-center gap-1">
             <Zap className="w-3 h-3 text-amber-500" />
-            GIN / B-Tree svarhraði: ~0,004 sek
+            {hasSearchCriteria ? 'GIN / B-Tree svarhraði: ~0,004 sek' : 'Tilbúið fyrir leit'}
           </div>
         </div>
       </section>
 
-      {/* Active Search Notification */}
-      {searchQuery && (
+      {/* Active Search Notification Banner */}
+      {hasSearchFilters && (
         <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
           <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <span className="font-bold">Sérhæfð línuleit virk: </span>
-            Birtir eingöngu reikninga sem innihalda leitarorðið <strong>„{searchQuery}“</strong> í nákvæmum reikningslínum, birgja eða stofnun.
-            {filteredResults.length === 0 && (
+            <span className="font-bold">Sérhæfð leit virk: </span>
+            {activeSearchSummary}.
+            {' '}Birtir eingöngu færslur sem passa við öll valin skilyrði samtímis (AND-skilyrði).
+            {filteredClients.length === 0 && (
               <span className="text-red-700 font-bold ml-1">
-                Engir reikningar fundust með þessari línu á völdu tímabili.
+                Engar færslur fundust með þessari samsetningu á völdu tímabili.
               </span>
             )}
           </div>
+          <button
+            onClick={() => {
+              setSearchClient('');
+              setSearchSupplier('');
+              setSearchLine('');
+            }}
+            className="text-amber-800 hover:text-black underline font-bold cursor-pointer shrink-0"
+          >
+            Hreinsa síur
+          </button>
         </div>
       )}
 
-      {/* Search Results Table (Like Forsíða) */}
+      {/* Search Results Table & View Switcher */}
       <section className="bg-white border border-neutral-900 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-neutral-900" />
-            <span>Leitarniðurstöður ({filteredResults.length} stofnanir)</span>
-          </h3>
+        {/* Results Header with View Mode Tabs */}
+        <div className="p-4 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-neutral-900" />
+              <span>Leitarniðurstöður {hasSearchCriteria ? `(${filteredClients.length} stofnanir)` : ''}</span>
+            </h3>
+
+            {/* View Mode Switcher: Stofnanir (Hierarchy) vs Beinir reikningar (Flat list) */}
+            {hasSearchCriteria && (
+              <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-300 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setResultsViewMode('hierarchy')}
+                  className={`px-3 py-1 rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                    resultsViewMode === 'hierarchy'
+                      ? 'bg-white text-neutral-900 shadow-2xs'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Stofnana- &amp; birgjasýn</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResultsViewMode('flatInvoices')}
+                  className={`px-3 py-1 rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                    resultsViewMode === 'flatInvoices'
+                      ? 'bg-white text-neutral-900 shadow-2xs'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>Beinir reikningar {dbSearchResults ? `(${dbSearchResults.length})` : ''}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <span className="text-xs text-neutral-500">
-            Smelltu á stofnun til að skoða staka reikninga og nákvæmar reikningslínur
+            {hasSearchCriteria
+              ? resultsViewMode === 'hierarchy'
+                ? 'Smelltu á stofnun til að skoða birgja og reikninga með sundurliðuðum línum'
+                : 'Sýnir alla staka reikninga sem uppfylla leitarskilyrðin'
+              : 'Sláðu inn leitarskilyrði hér að ofan til að birta niðurstöður'}
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-neutral-100 border-b border-neutral-300 text-[11px] font-black uppercase text-neutral-700 tracking-wider">
-                <th className="py-3 px-4 w-10"></th>
-                <th 
-                  className="py-3 px-4 cursor-pointer hover:bg-neutral-200 transition"
-                  onClick={() => handleSort('client')}
-                >
-                  <div className="flex items-center gap-1">
-                    <span>Stofnun (Greiðandi)</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-neutral-500" />
-                  </div>
-                </th>
-                <th 
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-neutral-200 transition"
-                  onClick={() => handleSort('invoiceCount')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Fjöldi reikninga í leit</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-neutral-500" />
-                  </div>
-                </th>
-                <th 
-                  className="py-3 px-4 text-right cursor-pointer hover:bg-neutral-200 transition"
-                  onClick={() => handleSort('totalAmount')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Heildarupphæð í leit</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-neutral-500" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 text-center w-28">Aðgerð</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 font-medium">
-              {filteredResults.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-12 text-center text-neutral-500">
-                    <p className="text-sm font-bold text-neutral-700">Engar niðurstöður fundust</p>
-                    <p className="text-xs mt-1">
-                      Enginn reikningur fannst með leitarorðinu „{searchQuery}“ á völdu tímabili.
-                    </p>
-                  </td>
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW 1: HIERARCHICAL STOFNANA- OG BIRGJASÝN                   */}
+        {/* ------------------------------------------------------------- */}
+        {resultsViewMode === 'hierarchy' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-neutral-100 border-b border-neutral-300 text-[11px] font-black uppercase text-neutral-700 tracking-wider">
+                  <th 
+                    className="py-3 px-4 cursor-pointer hover:bg-neutral-200 transition"
+                    onClick={() => handleSort('client')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>🏛️ Kaupandi (Stofnun)</span>
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${sortColumn === 'client' ? 'text-black font-black' : 'text-neutral-500'}`} />
+                    </div>
+                  </th>
+                  <th 
+                    className="py-3 px-4 text-center cursor-pointer hover:bg-neutral-200 transition"
+                    onClick={() => handleSort('invoiceCount')}
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>🧾 Fjöldi reikninga</span>
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${sortColumn === 'invoiceCount' ? 'text-black font-black' : 'text-neutral-500'}`} />
+                    </div>
+                  </th>
+                  <th 
+                    className="py-3 px-4 text-right cursor-pointer hover:bg-neutral-200 transition"
+                    onClick={() => handleSort('totalAmount')}
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>💰 Heildarupphæð</span>
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${sortColumn === 'totalAmount' ? 'text-black font-black' : 'text-neutral-500'}`} />
+                    </div>
+                  </th>
                 </tr>
-              ) : (
-                filteredResults.map(result => {
-                  const isExpanded = expandedClients.has(result.client);
-
-                  return (
-                    <React.Fragment key={result.client}>
-                      <tr 
-                        onClick={() => toggleClientExpansion(result.client)}
-                        className={`hover:bg-neutral-50 transition cursor-pointer select-none ${
-                          isExpanded ? 'bg-neutral-50/80' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-4 text-center">
-                          {isExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-neutral-700" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-neutral-400" />
-                          )}
-                        </td>
-                        <td className="py-3 px-4 font-bold text-neutral-900">
-                          <div className="flex items-center gap-2">
-                            <span>{highlightMatch(result.client, searchQuery)}</span>
-                            {result.isLineSearchMatch && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                                Línusamsvörun
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-semibold text-neutral-800">
-                          {formaTolu(result.invoiceCount)}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-neutral-900">
-                          {formaTolu(result.totalAmount)} kr.
-                        </td>
-                        <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 font-medium">
+                {!hasSearchCriteria ? (
+                  <tr>
+                    <td colSpan={3} className="py-16 text-center">
+                      <div className="max-w-md mx-auto flex flex-col items-center justify-center text-center p-6 sm:p-8 bg-neutral-50 rounded-2xl border border-dashed border-neutral-300 space-y-3">
+                        <div className="w-12 h-12 rounded-xl bg-neutral-900 text-white flex items-center justify-center shadow-xs">
+                          <Search className="w-6 h-6 text-emerald-400" />
+                        </div>
+                        <h4 className="text-base font-black text-neutral-900">
+                          Sláðu inn leitarskilyrði til að hefja leit
+                        </h4>
+                        <p className="text-xs text-neutral-600 leading-relaxed max-w-sm">
+                          Leitin hefst ekki sjálfkrafa. Sláðu inn heiti á <strong>Stofnun</strong>, <strong>Byrgja</strong> eða <strong>Línu á reikningi</strong> (bókhaldslykli) hér að ofan til að sækja gögn úr öllum 18,17 milljónum reikninga.
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
+                          <span className="text-[11px] text-neutral-500 font-bold">Flýtival:</span>
                           <button
                             type="button"
-                            onClick={() => toggleClientExpansion(result.client)}
-                            className="text-xs font-bold text-neutral-900 underline hover:text-neutral-600"
+                            onClick={() => {
+                              setSearchClient('Utanríkisráðuneyti');
+                              setSearchSupplier('Wise Lausnir');
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-300 shadow-2xs transition cursor-pointer"
                           >
-                            {isExpanded ? 'Fela' : 'Skoða'}
+                            Utanríkisráðuneyti + Wise Lausnir
                           </button>
-                        </td>
-                      </tr>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchClient('Utanríkisráðuneyti');
+                              setSearchLine('Risna');
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 text-[11px] font-bold rounded-lg border border-neutral-300 shadow-2xs transition cursor-pointer"
+                          >
+                            Utanríkisráðuneyti + Risna
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : isDataLoading ? (
+                  <tr>
+                    <td colSpan={3} className="py-12 text-center text-neutral-600 font-mono text-xs">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <RefreshCw className="w-6 h-6 animate-spin text-neutral-800" />
+                        <span className="font-bold text-neutral-900 text-sm font-mono">
+                          Sæki gögn úr gagnagrunni...
+                        </span>
+                        <span className="text-xs text-neutral-500 font-sans">
+                          Sæki sundurliðað yfirlit yfir stofnanir, birgja og reikninga ({isAllYears ? 'Öll ár' : selectedYear} / {isAllMonths ? 'Allir mánuðir' : `${selectedMonth}. mán`})
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredClients.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-12 text-center text-neutral-500">
+                      <p className="text-sm font-bold text-neutral-700">Engar niðurstöður fundust</p>
+                      <p className="text-xs mt-1">
+                        {hasSearchFilters
+                          ? `Enginn reikningur fannst með leitarskilyrðunum „${activeSearchSummary}“ á völdu tímabili.`
+                          : 'Engar færslur fundust á völdu tímabili.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredClients.map(client => {
+                    const isExpanded = expandedClients.has(client.client);
 
-                      {/* Expanded Sub-table for Invoices */}
-                      {isExpanded && (
-                        <tr className="bg-neutral-100/70">
-                          <td colSpan={5} className="p-3 sm:p-5 border-y border-neutral-300">
-                            <div className="bg-white rounded-xl border border-neutral-300 overflow-hidden shadow-xs space-y-3 p-4">
-                              <div className="flex items-center justify-between flex-wrap gap-2 border-b border-neutral-200 pb-3">
-                                <div>
-                                  <h4 className="text-xs font-black uppercase text-neutral-900 tracking-tight flex items-center gap-1.5">
-                                    <FileText className="w-4 h-4 text-neutral-800" />
-                                    <span>
-                                      Stakir Reikningar fyrir: {result.client} ({result.matchingInvoices.length} reikningar fundust)
-                                    </span>
-                                  </h4>
-                                  <p className="text-[11px] text-neutral-500">
-                                    Reikningar sem innihalda leitarorðið í sundurliðuðum reikningslínum eða birgi.
-                                  </p>
-                                </div>
-                              </div>
+                    // Samræming á tölum ef leitað er að ákveðnum birgi
+                    const matchingCachedSupplier = (searchSupplier.trim() && dbSuppliersCache[client.client])
+                      ? dbSuppliersCache[client.client].find(s => s.supplier.toLowerCase().includes(searchSupplier.toLowerCase().trim()))
+                      : null;
 
-                              <div className="space-y-3">
-                                {result.matchingInvoices.map(inv => {
-                                  const isSelected = selectedInvoices.some(s => s.reikningsnr === inv.id);
+                    const displayInvoiceCount = matchingCachedSupplier ? matchingCachedSupplier.invoiceCount : client.invoiceCount;
+                    const displayLineCount = matchingCachedSupplier ? (matchingCachedSupplier.lineCount || matchingCachedSupplier.invoiceCount) : client.lineCount;
+                    const displayTotalAmount = matchingCachedSupplier ? matchingCachedSupplier.totalAmount : client.totalAmount;
 
-                                  return (
-                                    <div 
-                                      key={inv.id} 
-                                      className="border border-neutral-200 rounded-lg p-3.5 bg-neutral-50/50 hover:bg-white transition space-y-2.5"
-                                    >
-                                      {/* Invoice Header Row */}
-                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-200 pb-2">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <span className="font-mono text-xs font-black text-neutral-900 bg-neutral-200 px-2 py-0.5 rounded">
-                                            {highlightMatch(inv.id, searchQuery)}
-                                          </span>
-                                          <span className="text-xs font-bold text-neutral-700">
-                                            {formaDags(inv.date, selectedYear)}
-                                          </span>
-                                          <span className="text-neutral-400">•</span>
-                                          <span className="text-xs font-bold text-neutral-900">
-                                            Birgir: {highlightMatch(inv.supplier, searchQuery)}
-                                          </span>
-                                        </div>
-
-                                        <div className="flex items-center gap-3 self-end sm:self-auto">
-                                          <span className="font-mono text-sm font-black text-neutral-900">
-                                            {formaTolu(inv.amount)} kr.
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => isSelected ? handleRemoveSelectedInvoice(inv.id) : handleSelectInvoice(inv)}
-                                            className={`px-2.5 py-1 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
-                                              isSelected
-                                                ? 'bg-red-100 text-red-900 border border-red-300 hover:bg-red-200'
-                                                : 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-xs'
-                                            }`}
-                                          >
-                                            {isSelected ? (
-                                              <>
-                                                <Trash2 className="w-3 h-3" />
-                                                <span>Fjarlægja</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Plus className="w-3 h-3" />
-                                                <span>Senda inn (140/2012)</span>
-                                              </>
-                                            )}
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* Itemized Lines */}
-                                      <div className="space-y-1.5 pl-2">
-                                        <div className="text-[10px] font-black uppercase tracking-wider text-neutral-500">
-                                          Sundurliðaðar reikningslínur (Bókhaldstexti):
-                                        </div>
-                                        {inv.lines && inv.lines.length > 0 ? (
-                                          inv.lines.map((line, lIdx) => {
-                                            const isLineMatch = searchQuery && line.description.toLowerCase().includes(searchQuery.toLowerCase());
-
-                                            return (
-                                              <div 
-                                                key={lIdx} 
-                                                className={`flex items-center justify-between text-xs py-1 px-2.5 rounded transition ${
-                                                  isLineMatch 
-                                                    ? 'bg-amber-100/90 border border-amber-300 font-semibold' 
-                                                    : 'bg-white border border-neutral-200'
-                                                }`}
-                                              >
-                                                <div className="flex items-center gap-2">
-                                                  <span className="w-1.5 h-1.5 rounded-full bg-neutral-400"></span>
-                                                  <span className="text-neutral-900">
-                                                    {highlightMatch(line.description, searchQuery)}
-                                                  </span>
-                                                  {isLineMatch && (
-                                                    <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-1.5 py-0.2 rounded">
-                                                      Fundið í línu!
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                <span className={`font-mono text-xs ${line.is_kredit ? 'text-red-600 font-bold' : 'text-neutral-800'}`}>
-                                                  {line.amount < 0 ? `- ${formaTolu(Math.abs(line.amount))} kr.` : `${formaTolu(line.amount)} kr.`}
-                                                </span>
-                                              </div>
-                                            );
-                                          })
-                                        ) : (
-                                          <div className="text-xs text-neutral-500 italic">
-                                            Engar stakar línur skráðar.
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                    return (
+                      <React.Fragment key={client.client}>
+                        <tr 
+                          onClick={() => toggleClientExpand(client.client)}
+                          className={`cursor-pointer transition-colors select-none ${
+                            isExpanded ? 'bg-blue-50/70' : 'hover:bg-neutral-50'
+                          }`}
+                        >
+                          <td className="p-3 font-semibold text-neutral-900 flex items-center gap-2.5">
+                            <span
+                              className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold transition-all ${
+                                isExpanded ? 'bg-blue-600 text-white' : 'bg-neutral-900 text-white'
+                              }`}
+                            >
+                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            </span>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1">
+                              <span>{highlightMatch(client.client, searchClient)}</span>
+                              {searchSupplier.trim() && (
+                                <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold border border-emerald-200">
+                                  birgir: {searchSupplier}
+                                </span>
+                              )}
+                              {searchLine.trim() && (
+                                <span className="text-[10px] font-mono bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded font-bold border border-purple-200">
+                                  lína: {searchLine}
+                                </span>
+                              )}
                             </div>
                           </td>
+                          <td className="p-3 text-center font-mono text-neutral-700">
+                            <span title={displayLineCount && displayLineCount !== displayInvoiceCount ? `${formaTolu(displayInvoiceCount)} reikningar (${formaTolu(displayLineCount)} línur í reikningum)` : `${formaTolu(displayInvoiceCount)} reikningar`}>
+                              {formaTolu(displayInvoiceCount)}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-neutral-900">
+                            {formaTolu(displayTotalAmount)} kr.
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+
+                        {/* Expanded Suppliers & Invoices Hierarchy */}
+                        {isExpanded && (() => {
+                          // Suppliers resolution: either real DB grouped list or fallback mapped from local invoices
+                          let rawSuppliers: Array<{ supplier: string; invoiceCount: number; lineCount?: number; totalAmount: number }> = [];
+                          if (dbSuppliersCache[client.client] && dbSuppliersCache[client.client].length > 0) {
+                            rawSuppliers = dbSuppliersCache[client.client];
+                          } else if (client.matchingInvoices && client.matchingInvoices.length > 0) {
+                            const map = new Map<string, { supplier: string; invoiceCount: number; lineCount: number; totalAmount: number; invoiceIds: Set<string> }>();
+                            for (const inv of client.matchingInvoices) {
+                              const supName = inv.supplier || 'Ótilgreindur birgir';
+                              const existing = map.get(supName);
+                              if (!existing) {
+                                map.set(supName, {
+                                  supplier: supName,
+                                  invoiceCount: 1,
+                                  lineCount: 1,
+                                  totalAmount: inv.amount,
+                                  invoiceIds: new Set([inv.id])
+                                });
+                              } else {
+                                existing.invoiceIds.add(inv.id);
+                                existing.invoiceCount = existing.invoiceIds.size;
+                                existing.lineCount += 1;
+                                existing.totalAmount += inv.amount;
+                              }
+                            }
+                            rawSuppliers = Array.from(map.values()).map(s => ({
+                              supplier: s.supplier,
+                              invoiceCount: s.invoiceCount,
+                              lineCount: s.lineCount,
+                              totalAmount: s.totalAmount
+                            })).sort((a, b) => b.totalAmount - a.totalAmount);
+                          } else if (dbSuppliersCache[client.client]) {
+                            rawSuppliers = dbSuppliersCache[client.client];
+                          }
+
+                          // Filter suppliers list by searchSupplier if entered, or local drawer filter
+                          const drawerFilter = (clientFilterQueries[client.client] || '').toLowerCase().trim();
+                          const displaySuppliers = rawSuppliers.filter(s => {
+                            if (drawerFilter) return s.supplier.toLowerCase().includes(drawerFilter);
+                            if (searchSupplier.trim()) return s.supplier.toLowerCase().includes(searchSupplier.toLowerCase().trim());
+                            return true;
+                          });
+
+                          const timePeriodLabel = isAllYears && isAllMonths 
+                            ? 'Öll ár & allir mánuðir' 
+                            : isAllYears 
+                              ? `Öll ár (${selectedMonth}. mán)` 
+                              : isAllMonths 
+                                ? `Allt árið ${selectedYear}` 
+                                : `${selectedMonth}. mán ${selectedYear}`;
+
+                          const isDbLoadingSuppliers = Boolean(dbStatus?.connected && loadingSuppliersForClient[client.client]);
+
+                          return (
+                            <tr className="bg-neutral-50/80">
+                              <td colSpan={3} className="p-4 pl-8 border-l-4 border-neutral-900">
+                                <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden shadow-2xs">
+                                  {/* Sub-header with institution title and supplier filter */}
+                                  <div className="bg-neutral-100 p-3 text-xs font-bold text-neutral-700 border-b border-neutral-200 flex flex-wrap justify-between items-center gap-2">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                      <span>
+                                        Birgjar hjá: <strong className="text-neutral-900">{client.client}</strong> ({timePeriodLabel})
+                                      </span>
+                                      <span className="text-[11px] font-semibold text-neutral-600 bg-neutral-200 px-2 py-0.5 rounded-full font-mono">
+                                        {displaySuppliers.length} {displaySuppliers.length === 1 ? 'birgir' : 'birgjar'}
+                                        {rawSuppliers.length > displaySuppliers.length && ` (af ${rawSuppliers.length})`}
+                                      </span>
+                                      {searchSupplier && (
+                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-200 font-bold">
+                                          Síað eftir byrgja: „{searchSupplier}“
+                                        </span>
+                                      )}
+                                      {searchLine && (
+                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-mono bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full border border-purple-200 font-bold">
+                                          Síað eftir línu: „{searchLine}“
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Local Search inside institution drawer */}
+                                    <div className="relative w-full sm:w-64">
+                                      <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                      <input
+                                        type="text"
+                                        value={clientFilterQueries[client.client] ?? searchSupplier}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          setClientFilterQueries(prev => ({ ...prev, [client.client]: val }));
+                                        }}
+                                        placeholder="Leita að birgi í skúffu..."
+                                        className="w-full pl-8 pr-7 py-1 text-xs bg-white border border-neutral-300 rounded font-normal focus:border-neutral-800 focus:outline-hidden"
+                                      />
+                                      {(clientFilterQueries[client.client] || searchSupplier) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setClientFilterQueries(prev => ({ ...prev, [client.client]: '' }));
+                                          }}
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                                          title="Hreinsa birgjasíu í skúffu"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Suppliers List inside institution drawer */}
+                                  <div className="divide-y divide-neutral-100">
+                                    {isDbLoadingSuppliers ? (
+                                      <div className="p-6 text-center text-neutral-600 font-mono text-xs flex items-center justify-center gap-2">
+                                        <RefreshCw className="w-4 h-4 animate-spin text-neutral-500" />
+                                        <span>Sæki sundurliðaðan lista yfir birgja úr PostgreSQL...</span>
+                                      </div>
+                                    ) : displaySuppliers.length === 0 ? (
+                                      <div className="p-6 text-center text-neutral-500 text-xs italic">
+                                        Enginn birgir fannst með leitarskilyrðunum hjá {client.client}.
+                                      </div>
+                                    ) : (
+                                      displaySuppliers.map(sup => {
+                                        const supKey = `${client.client}:::${sup.supplier}`;
+                                        const isSupExpanded = expandedSuppliers.has(supKey);
+                                        const supInvoices = supplierInvoicesCache[supKey] || [];
+                                        const isSupLoading = Boolean(supplierLoadingInvoices[supKey]);
+                                        const visibleLimit = supplierVisibleLimits[supKey] || 25;
+                                        const totalLines = sup.lineCount || sup.invoiceCount;
+
+                                        // Filter invoices inside supplier row if user typed a local filter
+                                        const lineFilter = (supplierInvoiceFilters[supKey] || '').toLowerCase().trim();
+                                        const filteredSupInvoices = lineFilter
+                                          ? supInvoices.filter(inv => 
+                                              inv.id.toLowerCase().includes(lineFilter) ||
+                                              inv.lines?.some(l => l.description.toLowerCase().includes(lineFilter))
+                                            )
+                                          : supInvoices;
+
+                                        const paginatedSupInvoices = filteredSupInvoices.slice(0, visibleLimit);
+                                        const hasMoreInvoices = !lineFilter && supInvoices.length < totalLines;
+
+                                        return (
+                                          <div key={supKey} className="text-xs">
+                                            {/* Supplier Row Item */}
+                                            <div 
+                                              onClick={() => toggleSupplierExpand(client.client, sup.supplier, totalLines)}
+                                              className={`p-3 flex items-center justify-between cursor-pointer hover:bg-neutral-100 transition-colors select-none ${
+                                                isSupExpanded ? 'bg-neutral-100 border-l-2 border-neutral-900 font-bold' : ''
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2">
+                                                <span className={`w-4 h-4 rounded flex items-center justify-center text-[9px] ${
+                                                  isSupExpanded ? 'bg-neutral-900 text-white' : 'bg-neutral-200 text-neutral-700'
+                                                }`}>
+                                                  {isSupExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                                </span>
+                                                <span className="font-semibold text-neutral-900">
+                                                  {highlightMatch(sup.supplier, searchSupplier || clientFilterQueries[client.client] || '')}
+                                                </span>
+                                              </div>
+
+                                              <div className="flex items-center gap-4 font-mono">
+                                                <span className="text-neutral-500 text-[11px]" title={`${formaTolu(sup.invoiceCount)} reikningar (${formaTolu(totalLines)} línur)`}>
+                                                  {formaTolu(sup.invoiceCount)} rk. ({formaTolu(totalLines)} línur)
+                                                </span>
+                                                <span className="font-bold text-neutral-900">
+                                                  {formaTolu(sup.totalAmount)} kr.
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            {/* Expanded Invoices for this Supplier */}
+                                            {isSupExpanded && (
+                                              <div className="p-3 bg-white border-t border-b border-neutral-200 pl-8">
+                                                {/* Local invoice filter toolbar */}
+                                                <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-neutral-100 flex-wrap">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-bold text-neutral-600">
+                                                      🧾 Reikningar ({formaTolu(sup.invoiceCount)} reikningar, {formaTolu(totalLines)} línur)
+                                                    </span>
+                                                    {searchLine && (
+                                                      <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">
+                                                        Línusía virk: „{searchLine}“
+                                                      </span>
+                                                    )}
+                                                  </div>
+
+                                                  <div className="relative w-56">
+                                                    <Search className="w-3 h-3 text-neutral-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                                                    <input
+                                                      type="text"
+                                                      value={supplierInvoiceFilters[supKey] ?? ''}
+                                                      onChange={e => {
+                                                        const val = e.target.value;
+                                                        setSupplierInvoiceFilters(prev => ({ ...prev, [supKey]: val }));
+                                                      }}
+                                                      placeholder="Sía vörulýsingu eða reikningsnr..."
+                                                      className="w-full pl-7 pr-6 py-1 text-[11px] bg-neutral-50 border border-neutral-300 rounded font-normal focus:border-neutral-800 focus:outline-hidden"
+                                                    />
+                                                    {supplierInvoiceFilters[supKey] && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setSupplierInvoiceFilters(prev => ({ ...prev, [supKey]: '' }))}
+                                                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                                                      >
+                                                        <X className="w-3 h-3" />
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                {isSupLoading && supInvoices.length === 0 ? (
+                                                  <div className="p-6 text-center text-neutral-600 font-mono text-xs flex items-center justify-center gap-2">
+                                                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-500" />
+                                                    <span>Sæki reikninga fyrir {sup.supplier}...</span>
+                                                  </div>
+                                                ) : supInvoices.length === 0 ? (
+                                                  <div className="p-4 text-center text-neutral-500 italic text-xs">
+                                                    Engir reikningar fundust fyrir þennan birgi með þessum skilyrðum.
+                                                  </div>
+                                                ) : filteredSupInvoices.length === 0 ? (
+                                                  <div className="p-4 text-center text-neutral-500 italic text-xs bg-neutral-50 rounded border border-neutral-200">
+                                                    Engar línur eða reikningsnúmer fundust með leitarorðinu „{lineFilter}“.
+                                                  </div>
+                                                ) : (
+                                                  <>
+                                                    <div className="overflow-x-auto">
+                                                      <table className="w-full text-xs text-left border-collapse">
+                                                        <thead>
+                                                          <tr className="bg-neutral-50 text-neutral-600 border-b border-neutral-200 text-[11px] font-bold uppercase">
+                                                            <th className="p-2 w-32" title="Greiðsludagsetning (dagsetning þegar greiðsla fór fram úr ríkissjóði, ekki útgáfudagur reiknings)">Greiðsludags.</th>
+                                                            <th className="p-2 w-36">Reikningsnr.</th>
+                                                            <th className="p-2">Skýring / Vörulýsing (Bókhaldslykill)</th>
+                                                            <th className="p-2 text-right">Upphæð / Beiðni</th>
+                                                          </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-neutral-100">
+                                                          {paginatedSupInvoices.map((inv, invIdx) => {
+                                                            const isAlreadySelected = selectedInvoices.some(i => i.reikningsnr === inv.id);
+                                                            const uniqueInvoiceKey = `${inv.id}-${invIdx}-${inv.date || ''}-${inv.amount || 0}`;
+                                                            const hasMultipleLines = Boolean(inv.lines && inv.lines.length > 1);
+
+                                                            return (
+                                                              <React.Fragment key={uniqueInvoiceKey}>
+                                                                <tr className="hover:bg-neutral-50/80 transition-colors">
+                                                                  <td className="p-2 font-mono text-neutral-600 whitespace-nowrap">
+                                                                    {formaDags(inv.date, selectedYear)}
+                                                                  </td>
+                                                                  <td className="p-2 font-mono whitespace-nowrap">
+                                                                    <span className="font-bold text-neutral-800 bg-neutral-100 px-1.5 py-0.5 rounded text-[11px]">
+                                                                      {inv.id}
+                                                                    </span>
+                                                                    {hasMultipleLines && (
+                                                                      <span 
+                                                                        className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded font-sans inline-block"
+                                                                        title={`Reikningurinn inniheldur ${inv.lines.length} línur`}
+                                                                      >
+                                                                        {inv.lines.length} línur
+                                                                      </span>
+                                                                    )}
+                                                                  </td>
+                                                                  <td className="p-2 text-neutral-800">
+                                                                    {highlightMatch(inv.lines?.[0]?.description || 'Almennur rekstur', searchLine || lineFilter)}
+                                                                  </td>
+                                                                  <td className="p-2 text-right font-mono font-bold text-neutral-900 whitespace-nowrap">
+                                                                    {onOpenWhistleblower && (
+                                                                      <button
+                                                                        onClick={e => {
+                                                                          e.stopPropagation();
+                                                                          onOpenWhistleblower({
+                                                                            institution: inv.client || client.client,
+                                                                            supplier: inv.supplier || sup.supplier,
+                                                                            invoiceNumber: String(inv.id)
+                                                                          });
+                                                                        }}
+                                                                        className="p-1 text-amber-700 hover:text-amber-950 hover:bg-amber-100 rounded text-[10px] font-bold mr-1.5 transition cursor-pointer inline-flex items-center align-middle"
+                                                                        title="Benda á þennan reikning (Trúnaðarábending)"
+                                                                      >
+                                                                        <ShieldAlert className="w-3.5 h-3.5" />
+                                                                      </button>
+                                                                    )}
+                                                                    {isAlreadySelected ? (
+                                                                      <span className="text-emerald-700 font-bold text-[11px] mr-2">
+                                                                        [Í BEIÐNI ⏳]
+                                                                      </span>
+                                                                    ) : (
+                                                                      <button
+                                                                        onClick={e => {
+                                                                          e.stopPropagation();
+                                                                          handleAddInvoiceToRequest(inv, inv.lines?.[0]?.description || '');
+                                                                        }}
+                                                                        className="px-2 py-0.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-[10px] font-bold mr-2 transition cursor-pointer"
+                                                                        title="Bæta við upplýsingabeiðni skv. upplýsingalögum 140/2012"
+                                                                      >
+                                                                        ➕ Senda inn
+                                                                      </button>
+                                                                    )}
+                                                                    <span>{formaTolu(inv.amount)} kr.</span>
+                                                                  </td>
+                                                                </tr>
+
+                                                                {/* Itemized ledger sub-lines */}
+                                                                {hasMultipleLines && (
+                                                                  <tr className="bg-neutral-50/40">
+                                                                    <td colSpan={4} className="p-2 pl-6 text-[11px] text-neutral-600">
+                                                                      <ul className="list-disc pl-4 space-y-0.5">
+                                                                        {inv.lines.map((l, lIdx) => (
+                                                                          <li key={lIdx} className={l.is_kredit ? 'line-through text-neutral-400' : ''}>
+                                                                            <span>{highlightMatch(l.description, searchLine || lineFilter)}</span> — <strong className="font-mono">{formaTolu(l.amount)} kr.</strong>
+                                                                            {l.is_kredit && <span className="text-red-600 ml-1 font-bold">(Kreditfært)</span>}
+                                                                          </li>
+                                                                        ))}
+                                                                      </ul>
+                                                                    </td>
+                                                                  </tr>
+                                                                )}
+                                                              </React.Fragment>
+                                                            );
+                                                          })}
+                                                        </tbody>
+                                                      </table>
+                                                    </div>
+
+                                                    {/* Pagination bar under supplier */}
+                                                    <div className="mt-2.5 pt-2.5 border-t border-neutral-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                      <div className="text-neutral-600 flex items-center gap-1.5 font-mono">
+                                                        <span>
+                                                          Sýnir <strong className="text-neutral-900">{paginatedSupInvoices.length}</strong> af <strong className="text-neutral-900">{filteredSupInvoices.length}</strong> síuðum línum (af samtals {formaTolu(totalLines)} hjá {sup.supplier})
+                                                        </span>
+                                                      </div>
+
+                                                      <div className="flex items-center gap-2">
+                                                        {hasMoreInvoices && (
+                                                          <button
+                                                            onClick={e => {
+                                                              e.stopPropagation();
+                                                              handleLoadMoreForSupplier(client.client, sup.supplier, totalLines);
+                                                            }}
+                                                            disabled={isSupLoading}
+                                                            className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                                                          >
+                                                            {isSupLoading && <RefreshCw size={12} className="animate-spin" />}
+                                                            Sýna næstu 25 línur ({Math.min(visibleLimit, totalLines)} af {formaTolu(totalLines)})
+                                                          </button>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  </>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW 2: BEINIR REIKNINGAR (FLATUR REIKNINGALISTI)             */}
+        {/* ------------------------------------------------------------- */}
+        {resultsViewMode === 'flatInvoices' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-neutral-100 border-b border-neutral-300 text-[11px] font-black uppercase text-neutral-700 tracking-wider">
+                  <th className="py-3 px-4 w-32" title="Greiðsludagsetning (dagsetning þegar greiðsla fór fram úr ríkissjóði, ekki útgáfudagur reiknings)">Greiðsludags.</th>
+                  <th className="py-3 px-4">🏛️ Kaupandi (Stofnun)</th>
+                  <th className="py-3 px-4">🏢 Seljandi (Birgir)</th>
+                  <th className="py-3 px-4 w-32">Reikningsnr.</th>
+                  <th className="py-3 px-4">🧾 Lína / Bókhaldslykill</th>
+                  <th className="py-3 px-4 text-right">Upphæð / Beiðni</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 font-medium">
+                {isDataLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-neutral-600 font-mono text-xs">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-neutral-800" />
+                        <span>Sæki staka reikninga úr gagnagrunni...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (!dbSearchResults || dbSearchResults.length === 0) ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-neutral-500">
+                      <p className="text-sm font-bold text-neutral-700">Engir reikningar fundust</p>
+                      <p className="text-xs mt-1">
+                        {hasSearchFilters
+                          ? `Enginn reikningur fannst með leitarskilyrðunum „${activeSearchSummary}“.`
+                          : 'Sláðu inn leitarskilyrði hér að ofan.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  dbSearchResults.map((inv, invIdx) => {
+                    const isAlreadySelected = selectedInvoices.some(i => i.reikningsnr === inv.numer || i.reikningsnr === inv.id);
+                    const invObj: Invoice = {
+                      id: inv.numer || inv.id,
+                      client: inv.client || '',
+                      supplier: inv.supplier || '',
+                      amount: inv.amount,
+                      date: formaDags(inv.date, selectedYear),
+                      lines: [{ description: inv.description || 'Almennur rekstur', amount: inv.amount, is_kredit: inv.amount < 0 }]
+                    };
+
+                    return (
+                      <tr key={`${inv.id}-${invIdx}`} className="hover:bg-neutral-50 transition-colors">
+                        <td className="py-2.5 px-4 font-mono text-neutral-600 whitespace-nowrap">
+                          {formaDags(inv.date, selectedYear)}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-neutral-900">
+                          {highlightMatch(inv.client || 'Ótilgreind stofnun', searchClient)}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-neutral-900">
+                          {highlightMatch(inv.supplier || 'Ótilgreindur birgir', searchSupplier)}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-neutral-800 whitespace-nowrap">
+                          <span className="bg-neutral-100 px-1.5 py-0.5 rounded font-bold text-[11px]">
+                            {inv.numer || inv.id}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-neutral-700">
+                          {highlightMatch(inv.description || 'Almennur rekstur', searchLine)}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono font-bold text-neutral-900 whitespace-nowrap">
+                          {onOpenWhistleblower && (
+                            <button
+                              onClick={() => {
+                                onOpenWhistleblower({
+                                  institution: inv.client,
+                                  supplier: inv.supplier,
+                                  invoiceNumber: String(inv.numer || inv.id)
+                                });
+                              }}
+                              className="p-1 text-amber-700 hover:text-amber-950 hover:bg-amber-100 rounded text-[10px] font-bold mr-1.5 transition cursor-pointer inline-flex items-center align-middle"
+                              title="Benda á þennan reikning (Trúnaðarábending)"
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isAlreadySelected ? (
+                            <span className="text-emerald-700 font-bold text-[11px] mr-2">
+                              [Í BEIÐNI ⏳]
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddInvoiceToRequest(invObj, inv.description || '')}
+                              className="px-2 py-0.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-[10px] font-bold mr-2 transition cursor-pointer"
+                              title="Bæta við upplýsingabeiðni skv. 140/2012"
+                            >
+                              ➕ Senda inn
+                            </button>
+                          )}
+                          <span>{formaTolu(inv.amount)} kr.</span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
-      {/* Floating or bottom Act 140/2012 Drawer */}
+      {/* Floating Act 140/2012 Drawer */}
       {selectedInvoices.length > 0 && (
         <div className="fixed bottom-4 right-4 max-w-md w-full bg-neutral-900 border-2 border-neutral-700 text-white p-4 rounded-xl shadow-2xl z-40 space-y-3 animate-in fade-in slide-in-from-bottom-4">
           <div className="flex items-center justify-between border-b border-neutral-700 pb-2">
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-black uppercase text-white">
-                Valdir reikningar fyrir 140/2012 ({selectedInvoices.length})
+              <span className="text-xs font-black uppercase text-white flex items-center gap-1.5">
+                <span>Valdir reikningar fyrir</span>
+                <a
+                  href="https://www.althingi.is/lagas/nuna/2012140.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-emerald-500/50 hover:text-emerald-300 flex items-center gap-0.5"
+                  title="Skoða Upplýsingalög nr. 140/2012 á Alþingi (opnast í nýjum glugga)"
+                >
+                  <span>140/2012</span>
+                  <ExternalLink className="w-2.5 h-2.5 text-emerald-400" />
+                </a>
+                <span>({selectedInvoices.length})</span>
               </span>
             </div>
             <button
               onClick={() => setSelectedInvoices([])}
-              className="text-neutral-400 hover:text-white text-xs font-bold"
+              className="text-neutral-400 hover:text-white text-xs font-bold cursor-pointer"
             >
               Hreinsa
             </button>
@@ -914,8 +1890,8 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
                   <span className="text-neutral-400 ml-1">({inv.client})</span>
                 </div>
                 <button
-                  onClick={() => handleRemoveSelectedInvoice(inv.reikningsnr)}
-                  className="text-red-400 hover:text-red-200 shrink-0"
+                  onClick={() => handleRemoveInvoiceFromRequest(inv.reikningsnr)}
+                  className="text-red-400 hover:text-red-200 shrink-0 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -925,7 +1901,7 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
 
           <div className="pt-1 flex gap-2">
             <button
-              onClick={copyLegalEmail}
+              onClick={copyLegalText}
               className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
             >
               {copiedLegalText ? (
@@ -940,6 +1916,14 @@ export const AdvancedSearchSubTab: React.FC<AdvancedSearchSubTabProps> = () => {
                 </>
               )}
             </button>
+            <a
+              href={emailMailtoUrl}
+              className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 border border-neutral-600"
+              title="Opna tölvupóstforrit með tilbúinni beiðni"
+            >
+              <Mail className="w-3.5 h-3.5 text-neutral-300" />
+              <span>Senda</span>
+            </a>
           </div>
         </div>
       )}

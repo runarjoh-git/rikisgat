@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, FileText, CheckSquare, Share2, Database, LayoutDashboard, 
-  ExternalLink, HardDrive, Cpu, Terminal, Clock, ArrowLeft, BarChart3, Tag
+  ExternalLink, HardDrive, Cpu, Terminal, Clock, ArrowLeft, BarChart3, Tag, Info,
+  Menu, Landmark, MessageSquare, Heart, Link as LinkIcon, Check, Zap
 } from 'lucide-react';
 import { StatusReport } from './components/StatusReport';
 import { ProjectManagerTab } from './components/ProjectManagerTab';
@@ -9,46 +10,197 @@ import { MarketingTab } from './components/MarketingTab';
 import { TechnicalTab } from './components/TechnicalTab';
 import { DataSimulatorTab } from './components/DataSimulatorTab';
 import { PublicPortalView } from './components/PublicPortalView';
+import { AboutView } from './components/AboutView';
+import { NavigationDrawer, ActivePage } from './components/NavigationDrawer';
+import { LoginModal } from './components/LoginModal';
+import { WhistleblowerModal } from './components/WhistleblowerModal';
+import { SupportModal } from './components/SupportModal';
+import { PerformanceDiagnosticModal } from './components/PerformanceDiagnosticModal';
+import { StateStatsView } from './components/StateStatsView';
+import { DiscussionsView } from './components/DiscussionsView';
 import { INITIAL_DB_STATS, INITIAL_ROADMAP_TASKS, INITIAL_BRANDS } from './data/mockData';
 import { TaskItem, BrandItem } from './types';
 import { formaTolu } from './utils/icelandicFormatters';
 
-const STORAGE_KEY_TASKS = 'rikisgat_stjorn_tasks_v6';
+const STORAGE_KEY_TASKS = 'rikisgat_stjorn_tasks_v7';
 const STORAGE_KEY_BRANDS = 'rikisgat_stjorn_brands_v2';
 const STORAGE_KEY_BROAD_SEARCH = 'rikisgat_broad_search_enabled_v2';
+const STORAGE_KEY_BROAD_SEARCH_YEARS = 'rikisgat_broad_search_years_enabled_v1';
+const STORAGE_KEY_BROAD_SEARCH_MONTHS = 'rikisgat_broad_search_months_enabled_v1';
+
+// Greining á slóð (URL params & hash) fyrir beinar bakdyr og síður
+function parsePageFromUrl(): { page: ActivePage; openSupport: boolean; openWhistleblower: boolean } {
+  if (typeof window === 'undefined') {
+    return { page: 'public', openSupport: false, openWhistleblower: false };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.toLowerCase();
+
+  const openSupport = params.has('styrkja') || hash === '#styrkja';
+  const openWhistleblower = params.has('abending') || hash === '#abending';
+
+  // Bakdyr beint inn á Innra Stjórnborð (?stjornbord, ?dashboard, ?bakdyr, ?admin, eða #stjornbord)
+  if (
+    params.has('stjornbord') ||
+    params.has('dashboard') ||
+    params.has('bakdyr') ||
+    params.has('admin') ||
+    params.get('view') === 'dashboard' ||
+    hash === '#stjornbord' ||
+    hash === '#dashboard' ||
+    hash === '#bakdyr'
+  ) {
+    return { page: 'dashboard', openSupport, openWhistleblower };
+  }
+
+  if (params.get('view') === 'about' || hash === '#about' || hash === '#um') {
+    return { page: 'about', openSupport, openWhistleblower };
+  }
+  if (params.get('view') === 'stats' || hash === '#stats' || hash === '#rikid') {
+    return { page: 'stats', openSupport, openWhistleblower };
+  }
+  if (params.get('view') === 'discussions' || hash === '#discussions' || hash === '#tjatt') {
+    return { page: 'discussions', openSupport, openWhistleblower };
+  }
+
+  return { page: 'public', openSupport, openWhistleblower };
+}
 
 export default function App() {
-  // Main view mode: 'dashboard' (Innra stjórnborð) or 'public' (Forsíða)
-  const [viewMode, setViewMode] = useState<'dashboard' | 'public'>('public');
+  const initialUrl = parsePageFromUrl();
+
+  // Main view mode: 'dashboard' (Innra stjórnborð), 'public' (Forsíða), 'about' (Um Ríkisgát), 'stats' (Ríkið í tölum), or 'discussions' (Tjatt)
+  const [viewMode, setViewMode] = useState<ActivePage>(initialUrl.page);
+  const [copiedBackdoorLink, setCopiedBackdoorLink] = useState(false);
+
+  // Navigation Drawer & Login Modal state
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isWhistleblowerModalOpen, setIsWhistleblowerModalOpen] = useState(initialUrl.openWhistleblower);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(initialUrl.openSupport);
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
+  const [whistleblowerData, setWhistleblowerData] = useState<{ institution?: string; supplier?: string; invoiceNumber?: string }>({});
+
+  // Hlusta á back/forward takka og hash breytingar í vafra
+  useEffect(() => {
+    const handlePopState = () => {
+      const current = parsePageFromUrl();
+      setViewMode(current.page);
+      if (current.openSupport) setIsSupportModalOpen(true);
+      if (current.openWhistleblower) setIsWhistleblowerModalOpen(true);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
+
+  // Samstilla slóð í vafra þegar skipt er um síðu (án þess að endurhlaða)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (viewMode === 'dashboard') {
+          url.searchParams.set('stjornbord', '1');
+          url.searchParams.delete('view');
+          window.history.replaceState(null, '', url.pathname + url.search);
+        } else if (viewMode === 'about') {
+          url.searchParams.delete('stjornbord');
+          url.searchParams.delete('dashboard');
+          url.searchParams.delete('bakdyr');
+          url.searchParams.set('view', 'about');
+          window.history.replaceState(null, '', url.pathname + url.search);
+        } else if (viewMode === 'stats') {
+          url.searchParams.delete('stjornbord');
+          url.searchParams.set('view', 'stats');
+          window.history.replaceState(null, '', url.pathname + url.search);
+        } else if (viewMode === 'discussions') {
+          url.searchParams.delete('stjornbord');
+          url.searchParams.set('view', 'discussions');
+          window.history.replaceState(null, '', url.pathname + url.search);
+        } else {
+          // Public / Reikningar: halda slóð hreinni
+          if (url.searchParams.has('stjornbord') || url.searchParams.get('view') === 'dashboard') {
+            url.searchParams.delete('stjornbord');
+            url.searchParams.delete('dashboard');
+            url.searchParams.delete('bakdyr');
+            url.searchParams.delete('view');
+            const clean = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '');
+            window.history.replaceState(null, '', clean);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error updating history state', e);
+    }
+  }, [viewMode]);
+
+  const handleOpenWhistleblower = (data?: { institution?: string; supplier?: string; invoiceNumber?: string }) => {
+    setWhistleblowerData(data || {});
+    setIsWhistleblowerModalOpen(true);
+  };
 
   // Dashboard active tab
   const [activeDashboardTab, setActiveDashboardTab] = useState<'report' | 'tasks' | 'marketing' | 'tech' | 'simulator'>('report');
 
-  // Broad search (Öll ár & Allir mánuðir) state controlled from Innra Stjórnborð -> Gagnagreining & Benchmark
-  const [broadSearchEnabled, setBroadSearchEnabled] = useState<boolean>(() => {
+  // Broad search state controlled from Innra Stjórnborð -> Verkstjórn (aðskildir takkar fyrir ár og mánuð)
+  const [broadSearchYearsEnabled, setBroadSearchYearsEnabled] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH);
+      const saved = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH_YEARS);
       if (saved !== null) return JSON.parse(saved);
+      const legacy = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH);
+      if (legacy !== null) return JSON.parse(legacy);
     } catch (e) {
-      console.error('Failed to load broadSearchEnabled', e);
+      console.error('Failed to load broadSearchYearsEnabled', e);
     }
-    return false;
+    return true;
   });
 
-  // Save broad search setting
+  const [broadSearchMonthsEnabled, setBroadSearchMonthsEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH_MONTHS);
+      if (saved !== null) return JSON.parse(saved);
+      const legacy = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH);
+      if (legacy !== null) return JSON.parse(legacy);
+    } catch (e) {
+      console.error('Failed to load broadSearchMonthsEnabled', e);
+    }
+    return true;
+  });
+
+  // Save broad search settings
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH, JSON.stringify(broadSearchEnabled));
+      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_YEARS, JSON.stringify(broadSearchYearsEnabled));
     } catch (e) {
-      console.error('Failed to save broadSearchEnabled', e);
+      console.error('Failed to save broadSearchYearsEnabled', e);
     }
-  }, [broadSearchEnabled]);
+  }, [broadSearchYearsEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_MONTHS, JSON.stringify(broadSearchMonthsEnabled));
+    } catch (e) {
+      console.error('Failed to save broadSearchMonthsEnabled', e);
+    }
+  }, [broadSearchMonthsEnabled]);
 
   // Tasks state with localStorage persistence
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TASKS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: TaskItem[] = JSON.parse(saved);
+        const existingIds = new Set(parsed.map(t => t.id));
+        const missing = INITIAL_ROADMAP_TASKS.filter(t => !existingIds.has(t.id));
+        if (missing.length > 0) {
+          return [...parsed, ...missing];
+        }
+        return parsed;
+      }
     } catch (e) {
       console.error('Failed to load tasks from localStorage', e);
     }
@@ -146,55 +298,134 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans">
+      {/* Navigation Drawer (Sliding menu from left) */}
+      <NavigationDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        currentPage={viewMode}
+        onNavigate={setViewMode}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onOpenWhistleblower={() => handleOpenWhistleblower()}
+        onOpenSupport={() => setIsSupportModalOpen(true)}
+        brandName={primaryBrand?.nafn || 'RÍKISGÁT'}
+      />
+
+      {/* User Login / Account Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        brandName={primaryBrand?.nafn || 'RíkisGát'}
+      />
+
+      {/* Whistleblower Tip Modal for state employees and citizens */}
+      <WhistleblowerModal
+        isOpen={isWhistleblowerModalOpen}
+        onClose={() => setIsWhistleblowerModalOpen(false)}
+        prefilledInstitution={whistleblowerData.institution}
+        prefilledSupplier={whistleblowerData.supplier}
+        prefilledInvoice={whistleblowerData.invoiceNumber}
+      />
+
+      {/* Support Us / Story & Bank Transfer Modal */}
+      <SupportModal
+        isOpen={isSupportModalOpen}
+        onClose={() => setIsSupportModalOpen(false)}
+      />
+
+      {/* Performance Diagnostic & Localhost Latency Modal */}
+      <PerformanceDiagnosticModal
+        isOpen={isPerformanceModalOpen}
+        onClose={() => setIsPerformanceModalOpen(false)}
+      />
+
       {/* Top Global Bar */}
       <nav className="bg-neutral-900 text-white border-b border-neutral-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 font-black tracking-tight text-lg">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Hamburger Button (3 lines in top-left corner) */}
+            <button
+              id="open-nav-drawer-btn"
+              onClick={() => setIsDrawerOpen(true)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer -ml-1.5 focus:outline-none focus:ring-2 focus:ring-white/20"
+              aria-label="Opna valmynd (3 strik)"
+              title="Valmynd (síður, ríkið í tölum, um okkur og aðgangur)"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Brand Logo and Title */}
+            <div 
+              onClick={() => setViewMode('public')}
+              className="flex items-center gap-2 font-black tracking-tight text-base sm:text-lg cursor-pointer select-none"
+            >
               <span className="w-7 h-7 rounded bg-white text-neutral-900 flex items-center justify-center font-black text-sm">
                 {primaryBrand ? primaryBrand.nafn.charAt(0) : 'R'}
               </span>
               <span>{primaryBrand ? primaryBrand.nafn.toUpperCase() : 'RÍKISGÁT'}</span>
             </div>
-            <span className="hidden sm:inline-block text-[11px] font-mono text-neutral-400 border-l border-neutral-700 pl-3">
-              PostgreSQL 18 ({formaTolu(INITIAL_DB_STATS.ar_2017_2025_fjoldi + INITIAL_DB_STATS.ar_2026_fjoldi)} reikningar)
-            </span>
+
+            {viewMode !== 'public' && (
+              <span className="hidden md:inline-block text-[11px] font-mono text-neutral-400 border-l border-neutral-700 pl-3">
+                PostgreSQL 18 ({formaTolu(INITIAL_DB_STATS.ar_2017_2025_fjoldi + INITIAL_DB_STATS.ar_2026_fjoldi)} reikningar)
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('dashboard')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'dashboard'
-                  ? 'bg-white text-neutral-900 shadow-xs'
-                  : 'text-neutral-300 hover:text-white hover:bg-neutral-800'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Innra Stjórnborð</span>
-            </button>
+            {viewMode !== 'public' && (
+              <button
+                type="button"
+                onClick={() => setIsPerformanceModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer"
+                title="Keyra hraðapróf og greina flöskuhálsa á localhost"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Hraðapróf</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setViewMode('public')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'public'
-                  ? 'bg-white text-neutral-900 shadow-xs'
-                  : 'text-neutral-300 hover:text-white hover:bg-neutral-800'
-              }`}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Almenningsvefur (Forsíða)</span>
-            </button>
+            {viewMode !== 'public' && (
+              <button
+                onClick={() => setViewMode('public')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Forsíða / Reikningar</span>
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {viewMode === 'public' ? (
+        {viewMode === 'about' ? (
+          <AboutView 
+            onBackToPortal={() => setViewMode('public')} 
+            onOpenDashboard={() => setViewMode('dashboard')} 
+            onOpenSupport={() => setIsSupportModalOpen(true)}
+          />
+        ) : viewMode === 'stats' ? (
+          <StateStatsView
+            onBackToPortal={() => setViewMode('public')}
+            onOpenDiscussions={() => setViewMode('discussions')}
+          />
+        ) : viewMode === 'discussions' ? (
+          <DiscussionsView
+            onBackToPortal={() => setViewMode('public')}
+            onOpenStats={() => setViewMode('stats')}
+          />
+        ) : viewMode === 'public' ? (
           <PublicPortalView 
             onOpenDashboard={() => setViewMode('dashboard')} 
-            broadSearchEnabled={broadSearchEnabled}
+            onOpenAbout={() => setViewMode('about')}
+            onOpenStats={() => setViewMode('stats')}
+            onOpenWhistleblower={handleOpenWhistleblower}
+            onOpenSupport={() => setIsSupportModalOpen(true)}
+            onOpenPerformance={() => setIsPerformanceModalOpen(true)}
+            broadSearchYearsEnabled={broadSearchYearsEnabled}
+            broadSearchMonthsEnabled={broadSearchMonthsEnabled}
+            broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
           />
         ) : (
           <div className="space-y-6">
@@ -214,11 +445,42 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 text-xs font-mono text-neutral-600 bg-neutral-50 px-3 py-2 rounded-xl border border-neutral-200">
-                <HardDrive className="w-4 h-4 text-neutral-500" />
-                <span>PostgreSQL: <strong>4,2 GiB</strong></span>
-                <span className="text-neutral-300">|</span>
-                <span>Svarhraði: <strong>0,005s</strong></span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const backdoorUrl = `${window.location.origin}${window.location.pathname}?stjornbord`;
+                    navigator.clipboard.writeText(backdoorUrl);
+                    setCopiedBackdoorLink(true);
+                    setTimeout(() => setCopiedBackdoorLink(false), 2500);
+                  }}
+                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Afrita beinan bakdyratengil á þetta stjórnborð"
+                >
+                  {copiedBackdoorLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">✓ Afritað á klemmuspjald!</span>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="w-3.5 h-3.5 text-amber-700" />
+                      <span>🔗 Bakdyr: ?stjornbord</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPerformanceModalOpen(true)}
+                  className="flex items-center gap-2 text-xs font-mono text-neutral-700 hover:text-neutral-950 bg-neutral-50 hover:bg-neutral-100 px-3 py-2 rounded-xl border border-neutral-200 transition cursor-pointer shadow-2xs"
+                  title="Smelltu til að opna hraðapróf og flöskuhálsagreiningu á localhost"
+                >
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  <span>PostgreSQL: <strong>4,2 GiB</strong></span>
+                  <span className="text-neutral-300">|</span>
+                  <span className="text-amber-800 font-bold underline decoration-dotted">Hraðapróf</span>
+                </button>
               </div>
             </div>
 
@@ -257,7 +519,7 @@ export default function App() {
                 }`}
               >
                 <Share2 className="w-4 h-4" />
-                <span>📢 Markaðsstjórn & Vörumerki ({brands.length})</span>
+                <span>📢 Markaðsstjórn, Vörumerki & Kannanir</span>
               </button>
 
               <button
@@ -295,6 +557,15 @@ export default function App() {
                   onAddTask={handleAddTask}
                   onEditTask={handleEditTask}
                   onDeleteTask={handleDeleteTask}
+                  broadSearchYearsEnabled={broadSearchYearsEnabled}
+                  broadSearchMonthsEnabled={broadSearchMonthsEnabled}
+                  onToggleBroadSearchYears={setBroadSearchYearsEnabled}
+                  onToggleBroadSearchMonths={setBroadSearchMonthsEnabled}
+                  broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
+                  onToggleBroadSearch={(val) => {
+                    setBroadSearchYearsEnabled(val);
+                    setBroadSearchMonthsEnabled(val);
+                  }}
                 />
               )}
               {activeDashboardTab === 'marketing' && (
@@ -309,12 +580,62 @@ export default function App() {
               {activeDashboardTab === 'simulator' && (
                 <DataSimulatorTab 
                   stats={INITIAL_DB_STATS} 
-                  broadSearchEnabled={broadSearchEnabled}
-                  onToggleBroadSearch={setBroadSearchEnabled}
+                  broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
+                  onToggleBroadSearch={(val) => {
+                    setBroadSearchYearsEnabled(val);
+                    setBroadSearchMonthsEnabled(val);
+                  }}
+                  onOpenWhistleblower={handleOpenWhistleblower}
                 />
               )}
             </div>
           </div>
+        )}
+
+        {viewMode !== 'public' && (
+          <footer className="mt-12 pt-6 border-t border-neutral-300 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-600">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-neutral-800" />
+              <span className="font-bold text-neutral-900">Ríkisgát</span>
+              <span className="text-neutral-400">|</span>
+              <span>Sjálfstætt borgaralegt eftirlit með opinberum útgjöldum Íslands</span>
+            </div>
+            <div className="flex items-center gap-4 sm:gap-6 flex-wrap font-bold text-neutral-700">
+              <button
+                onClick={() => setViewMode('public')}
+                className="hover:text-neutral-900 hover:underline cursor-pointer"
+              >
+                Forsíða / Reikningar
+              </button>
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'stats' ? 'text-neutral-900 underline' : ''}`}
+              >
+                <Landmark className="w-3.5 h-3.5 text-neutral-700" />
+                <span>Ríkið í tölum</span>
+              </button>
+              <button
+                onClick={() => setViewMode('about')}
+                className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'about' ? 'text-neutral-900 underline' : ''}`}
+              >
+                <Info className="w-3.5 h-3.5 text-neutral-700" />
+                <span>Um Ríkisgát</span>
+              </button>
+              <button
+                onClick={() => setIsSupportModalOpen(true)}
+                className="hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer"
+              >
+                <Heart className="w-3.5 h-3.5 text-neutral-700" />
+                <span>Viltu styrkja okkur?</span>
+              </button>
+              <button
+                onClick={() => setViewMode('dashboard')}
+                className={`text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer ${viewMode === 'dashboard' ? 'text-neutral-900 underline' : ''}`}
+              >
+                Innra Stjórnborð
+              </button>
+            </div>
+          </footer>
         )}
       </main>
     </div>

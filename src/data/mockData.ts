@@ -1,15 +1,15 @@
-import { DatabaseStats, Invoice, Stofnun, TopSupplier, TaskItem, LocalhostFileUpdate } from '../types';
+import { DatabaseStats, Invoice, Stofnun, TopSupplier, TaskItem, LocalhostFileUpdate, StofnunEmailItem, PollItem } from '../types';
 
 export const INITIAL_DB_STATS: DatabaseStats = {
   ar_2017_2025_fjoldi: 16871299, // 18.167.314 samtals mínus 1.296.015 (2026)
-  ar_2026_fjoldi: 1296015,
-  nyrjasta_dags: '2026-06-30',
-  dagar_sidan: 75,
+  ar_2026_fjoldi: 1704661, // 1.296.015 + 408.646 nýjar línur (2026-4.xlsx)
+  nyrjasta_dags: '2026-08-31',
+  dagar_sidan: 25,
   stofnanir_fjoldi: 172,
   birgjar_fjoldi: 19303,
-  total_size_gib: 4.2,
-  reikningar_size_gib: 4.2,
-  birgjar_size_mib: 3.0,
+  total_size_gib: 4.3,
+  reikningar_size_gib: 4.3,
+  birgjar_size_mib: 3.1,
   stofnanir_size_kib: 32.0,
 };
 
@@ -224,8 +224,8 @@ export function getMonthlyPortalData(yearInput: string | number, monthInput: str
   const monthName = ISLENSKIR_MANUDIR[month] || `Mánuður ${month}`;
   const paddedMonth = String(month).padStart(2, '0');
 
-  // Gögn fyrir árið 2026 ná aðeins til 30. júní skv. stöðuskýrslu (INITIAL_DB_STATS)
-  const isFutureOrUnpublished = year > 2026 || (year === 2026 && month > 6);
+  // Gögn fyrir árið 2026 ná til 31. ágúst skv. stöðuskýrslu og nýjustu innlestrum (2026-4.xlsx)
+  const isFutureOrUnpublished = year > 2026 || (year === 2026 && month > 8);
 
   // Ársstuðull (verðbólga og raunvöxtur ríkisútgjalda 2017–2026)
   const yearFactors: Record<number, number> = {
@@ -993,48 +993,66 @@ export const INITIAL_ROADMAP_TASKS: TaskItem[] = [
     category: 'Framendi'
   },
 
-  // M3: Nútíma Skýjahýsing í fyrsta skipti (Cloud Hosting Architecture)
+  // M3: Hetzner Cloud CAX21 & Coolify (Skýjahýsing í Finnlandi/Þýskalandi)
   {
-    id: 't-9',
+    id: 't-cax21-1',
     milestone: 'M3',
-    title: 'Val á Skýjahýsingu í stað FTP (Render / Supabase / VPS)',
-    desc: 'Stofna fyrsta skýjaaðganginn (fyrsta skipti sem skýið er notað í stað hefðbundins FTP). Skilgreina Node.js vefþjón og stjórnaðan PostgreSQL gagnagrunn í skýinu.',
+    title: 'Hetzner Cloud: Stofna CAX21 netþjón í Helsinki (Finnland)',
+    desc: 'Stofna aðgang á hetzner.com/cloud. Búa til nýjan netþjón: Staðsetning Helsinki (hel1 - Finnland) eða Falkenstein (fsn1 - Þýskaland). Velja gerð CAX21 (Ampere Altra ARM64, 4 vCPU, 8 GB RAM, 80 GB NVMe SSD) á ~€6,00/mán. Velja Ubuntu 24.04 LTS og tengja SSH lykil.',
     status: 'in_progress',
     priority: 'high',
     category: 'Rekstur'
   },
   {
-    id: 't-10',
+    id: 't-cax21-2',
     milestone: 'M3',
-    title: 'Sjálfvirk dreifing með Git (Continuous Deployment)',
-    desc: 'Kveðja handvirkan FTP flutning. Setja upp Git tengingu þannig að hver ný útgáfa (git push) uppfærir vefinn sjálfkrafa í skýinu á 60 sekúndum.',
+    title: 'Uppsetning á Coolify (Einka-PaaS stjórnborð á CAX21)',
+    desc: 'Tengjast netþjóninum með SSH (ssh root@<IP-tala>) og keyra uppsetningu Coolify með einni skipun: curl -fsSL https://coolify.io/install.sh | bash. Opna stjórnborðið á http://<IP-tala>:8000 og skilgreina aðalnotanda. Coolify sér um sjálfvirka dreifingu, Docker og SSL vottorð.',
     status: 'in_progress',
     priority: 'high',
-    category: 'Bakendi'
+    category: 'Rekstur'
   },
   {
-    id: 't-11',
+    id: 't-cax21-3',
     milestone: 'M3',
-    title: 'Öruggur PostgreSQL Skýjagrunnur (SSL & Afrit í skýi)',
-    desc: 'Stilla framleiðslugrunn í skýi með SSL dulkóðun, lokuðum aðgangi og sjálfvirkum daglegum afritum frá skýjaþjónustunni.',
+    title: 'PostgreSQL 18 gagnagrunnur & sjálfvirk afrit í Coolify',
+    desc: 'Í Coolify: Búa til nýjan PostgreSQL gagnagrunn nefndan "rikisgat" með traustu lykilorði. Nýta 8 GB vinnsluminni CAX21 vélarinnar (t.d. shared_buffers=2GB) fyrir hámarksafköst og virkja sjálfvirka daglega afritatöku (Automated Backups).',
     status: 'in_progress',
     priority: 'high',
     category: 'Gagnagrunnur'
   },
   {
-    id: 't-12',
+    id: 't-cax21-4',
     milestone: 'M3',
-    title: 'Umhverfisbreytur (.env) & Leyndarmálastjórnun',
-    desc: 'Aðskilja staðbundna tengingu (localhost:5432) og skýjatengingu gegnum DATABASE_URL umhverfisbreytu. Engin lykilorð geymd í kóðanum sjálfum.',
+    title: 'Flutningur á raungögnum (pg_dump / pg_restore) úr D: drifi yfir á Hetzner',
+    desc: 'Taka ferskt afrit úr staðbundna PostgreSQL grunninum á fartölvunni: "D:\\PostgreSQL\\bin\\pg_dump.exe" -Fc -U postgres -d rikisgat -f rikisgat_prod.dump og flytja yfir á Hetzner með scp. Keyra pg_restore inn í Coolify gagnagrunninn.',
+    status: 'in_progress',
+    priority: 'high',
+    category: 'Gagnagrunnur'
+  },
+  {
+    id: 't-cax21-5',
+    milestone: 'M3',
+    title: 'Ríkisgát vefþjónn: Git Push sjálfvirkni (CI/CD) í Coolify',
+    desc: 'Tengja GitHub repository Ríkisgát við Coolify. Skilgreina Build Command (npm run build) og Start Command (npm run start). Við hvert "git push" byggir Coolify vefinn sjálfkrafa og ræsir á innan við 60 sekúndum án nokkurs niðritíma.',
     status: 'in_progress',
     priority: 'high',
     category: 'Bakendi'
   },
   {
-    id: 't-13',
+    id: 't-cax21-6',
     milestone: 'M3',
-    title: 'Lénatenging (rikisgat.is) við Skýjahýsinguna',
-    desc: 'Festa rikisgat.is hjá ISNIC og beina DNS færslum (CNAME/A) að skýjaþjóninum með sjálfvirku ókeypis SSL/HTTPS vottorði.',
+    title: 'Umhverfisbreytur (.env) & Hetzner Cloud Firewall öryggisveggur',
+    desc: 'Skilgreina DATABASE_URL, NODE_ENV=production og PORT=3000 í Coolify. Setja upp ókeypis Hetzner Cloud Firewall sem lokar öllum óþörfum portum og leyfir aðeins port 22 (SSH), 80 (HTTP) og 443 (HTTPS).',
+    status: 'in_progress',
+    priority: 'high',
+    category: 'Bakendi'
+  },
+  {
+    id: 't-cax21-7',
+    milestone: 'M3',
+    title: 'Lénatenging (rikisgat.is hjá ISNIC) og Sjálfvirkt HTTPS / SSL',
+    desc: 'Beina A-færslu fyrir rikisgat.is og www.rikisgat.is hjá ISNIC / nafnaþjóni að fastri IPv4/IPv6 tölu Hetzner CAX21 þjónsins. Coolify sækir og endurnýjar sjálfvirkt ókeypis Let\'s Encrypt SSL vottorð með A+ öryggiseinkunn.',
     status: 'in_progress',
     priority: 'high',
     category: 'Rekstur'
@@ -1213,67 +1231,138 @@ VALUES
 
 export const INITIAL_LOCALHOST_UPDATES: LocalhostFileUpdate[] = [
   {
-    id: 'upd-server',
+    id: 'upd-formatters-v77',
+    filePath: 'src/utils/icelandicFormatters.ts',
+    description: 'ENSKAR DAGSETNINGAR LAGAÐAR: formaDags() þekkir nú ensk heiti mánaða (eins og "Fri May 29", "May 29") og breytir þeim sjálfkrafa yfir í íslenskt snið dags-mán-ár (29-05-2024) með vísan í valið ár.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.7'
+  },
+  {
+    id: 'upd-server-v77',
     filePath: 'server.ts',
-    description: 'NÝ SKRÁ (v7.0): Express bakendi með beinni tengingu við PostgreSQL (pg.Pool). Greinir sjálfkrafa Excel-töflur (t.d. reikningar, faerslur), leitar í raunverulegum gögnum með /api/invoices og /api/institutions, og samþættir Vite þróunarmiðlara.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
+    description: 'DAGSETNINGASTUÐNINGUR Í BAKENDA: formatRowDate() breytir bæði Date hlutum úr PostgreSQL og enskum textastrengjum rétt yfir í YYYY-MM-DD.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.7'
   },
   {
-    id: 'upd-api',
-    filePath: 'src/services/api.ts',
-    description: 'NÝ SKRÁ (v7.0): Samskiptaþjónusta við PostgreSQL vefþjón. Sækir stöðu gagnagrunns (checkDbStatus), stillingar (updateDbConfig) og raunverulega reikninga (fetchInvoicesFromDb, fetchInstitutionsFromDb).',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
-  },
-  {
-    id: 'upd-db-modal',
-    filePath: 'src/components/DbConnectionModal.tsx',
-    description: 'NÝ SKRÁ (v7.0): Gagnagrunnsgluggi (PostgreSQL tengistjórnborð). Gerir notanda kleift að prófa og vista host (localhost), port (5432), gagnagrunn (opnir_reikningar) og notendanafn/lykilorð með lifandi prófun.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
-  },
-  {
-    id: 'upd-pkg',
-    filePath: 'package.json',
-    description: 'UPPFÆRSLA (v7.0): Bætt við "pg" og "@types/pg", uppfærð "dev": "tsx server.ts", "build" og "start" fyrir sjálfstæðan Express + Vite full-stack arkitektúr.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
-  },
-  {
-    id: 'upd-env',
-    filePath: '.env.example',
-    description: 'UPPFÆRSLA (v7.0): Bætt við stillingum fyrir PostgreSQL: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
-  },
-  {
-    id: 'upd-portal-v7',
+    id: 'upd-portal-v77',
     filePath: 'src/components/PublicPortalView.tsx',
-    description: 'UPPFÆRSLA (v7.0): Tengt forsíðuviðmótið beint við PostgreSQL. Bætt við stöðutakka í haus (🟢 PostgreSQL tengt / 🟡 Sýndarhamur), leitar beint í alvöru reikningum og stofnunum úr Excel/PostgreSQL þegar tengt er.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v7.0'
+    description: 'DAGSETNINGASNIÐ Á FORSÍÐU: Notar formaDags(inv.date, selectedYear) í öllum töflulínum, leitum og vöktunarbeiðnum svo engin enska eða rangt ártal birtist.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.7'
   },
   {
-    id: 'upd-3',
-    filePath: 'src/data/mockData.ts',
-    description: 'Reikningagrunnur margfaldaður. Nýr determinískur reikningasmiður (EXTENSIVE_SUPPLIER_POOL) býr til 35–45 sundurliðaða reikninga á hverja stofnun í hverjum mánuði í stað aðeins 3–4.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v6.6'
+    id: 'upd-app-v75',
+    filePath: 'src/App.tsx',
+    description: 'Forsíða sem upphafssíða: Breytt sjálfgefnu viewMode í "public" svo Forsíðan (almenna gáttin) opnast beint við ræsingu í stað innra stjórnborðsins.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.5'
   },
   {
-    id: 'upd-1',
+    id: 'upd-search-v75',
     filePath: 'src/components/AdvancedSearchSubTab.tsx',
-    description: 'NÝ SKRÁ: Nýr undirflokkur „Ítarleg Leit“ undir Gagnagreining & Benchmark. Fastur leitardálkur alltaf í Breiðri Leit (öll ár og allir mánuðir), leit í stökum reikningslínum.',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v6.4'
+    description: 'Ítarleg leit: Tóm leitarskilyrði að sjálfgefnu, engin þvinguð sjálfgefin röðun á dálkum, samþætt við nýja formaDags() fallið og forgangur á raunstofnanir úr PostgreSQL.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.5'
   },
   {
-    id: 'upd-2',
-    filePath: 'src/components/DataSimulatorTab.tsx',
-    description: 'Breytt virkni AF/Á takkans: Hann er nú eingöngu stjórntæki fyrir forsíðuna (ekkert prófunarbox).',
-    updatedAt: '15. september 2026',
-    versionLabel: 'v6.4'
+    id: 'upd-db-modal-v75',
+    filePath: 'src/components/DbConnectionModal.tsx',
+    description: 'Tengigluggi: Sjálfgefið heiti gagnagrunns uppfært í "rikisgat" (í stað opnir_reikningar) í samræmi við verkefnislýsingu.',
+    updatedAt: '16. september 2026',
+    versionLabel: 'v7.5'
+  }
+];
+
+export const INITIAL_STOFNANIR_EMAILS: StofnunEmailItem[] = [
+  { id: 'inst-1', name: 'Landspítali', raduneyti: 'Heilbrigðisráðuneytið', email: 'postur@landspitali.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-2', name: 'Vegagerðin', raduneyti: 'Innviðaráðuneytið', email: 'vegagerdin@vegagerdin.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-3', name: 'Tryggingastofnun ríkisins', raduneyti: 'Félags- og vinnumarkaðsráðuneytið', email: 'tr@tr.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-4', name: 'Sjúkratryggingar Íslands', raduneyti: 'Heilbrigðisráðuneytið', email: 'sjukra@sjukra.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-5', name: 'Háskóli Íslands', raduneyti: 'Háskóla-, iðnaðar- og nýsköpunarráðuneytið', email: 'hi@hi.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-6', name: 'Vinnumálastofnun', raduneyti: 'Félags- og vinnumarkaðsráðuneytið', email: 'postur@vmst.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-7', name: 'Isavia ohf.', raduneyti: 'Innviðaráðuneytið', email: 'isavia@isavia.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-8', name: 'Ríkislögreglustjóri', raduneyti: 'Dómsmálaráðuneytið', email: 'rls@rls.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-9', name: 'Ríkisútvarpið ohf.', raduneyti: 'Menningar- og viðskiptaráðuneytið', email: 'ruv@ruv.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-10', name: 'Hafrannsóknastofnun', raduneyti: 'Matvælaráðuneytið', email: 'hafro@hafro.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-11', name: 'Landhelgisgæsla Íslands', raduneyti: 'Dómsmálaráðuneytið', email: 'lhg@lhg.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-12', name: 'Skatturinn', raduneyti: 'Fjármála- og efnahagsráðuneytið', email: 'skatturinn@skatturinn.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-13', name: 'Fangelsismálastofnun ríkisins', raduneyti: 'Dómsmálaráðuneytið', email: 'fangelsi@fangelsi.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-14', name: 'Fjársýsla ríkisins', raduneyti: 'Fjármála- og efnahagsráðuneytið', email: 'fjs@fjs.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-15', name: 'Matvælastofnun (MAST)', raduneyti: 'Matvælaráðuneytið', email: 'mast@mast.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-16', name: 'Umhverfisstofnun', raduneyti: 'Umhverfis-, orku- og loftslagsráðuneytið', email: 'ust@ust.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-17', name: 'Samgöngustofa', raduneyti: 'Innviðaráðuneytið', email: 'samgongustofa@samgongustofa.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-18', name: 'Húsnæðis- og mannvirkjastofnun (HMS)', raduneyti: 'Innviðaráðuneytið', email: 'hms@hms.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-19', name: 'Veðurstofa Íslands', raduneyti: 'Umhverfis-, orku- og loftslagsráðuneytið', email: 'vedur@vedur.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-20', name: 'Sjúkrahúsið á Akureyri', raduneyti: 'Heilbrigðisráðuneytið', email: 'sak@sak.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-21', name: 'Heilbrigðisstofnun Suðurlands', raduneyti: 'Heilbrigðisráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-22', name: 'Heilbrigðisstofnun Norðurlands', raduneyti: 'Heilbrigðisráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-23', name: 'Heilbrigðisstofnun Vesturlands', raduneyti: 'Heilbrigðisráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-24', name: 'Útlendingastofnun', raduneyti: 'Dómsmálaráðuneytið', email: 'utl@utl.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-25', name: 'Þjóðskrá Íslands', raduneyti: 'Innviðaráðuneytið', email: 'skra@skra.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-26', name: 'Lögreglustjórinn á höfuðborgarsvæðinu', raduneyti: 'Dómsmálaráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-27', name: 'Háskólinn á Akureyri', raduneyti: 'Háskóla-, iðnaðar- og nýsköpunarráðuneytið', email: 'unak@unak.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-28', name: 'Alþingi', raduneyti: 'Forsætisráðuneytið', email: 'althingi@althingi.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-29', name: 'Rannsóknamiðstöð Íslands (Rannís)', raduneyti: 'Háskóla-, iðnaðar- og nýsköpunarráðuneytið', email: 'rannis@rannis.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-30', name: 'Persónuvernd', raduneyti: 'Dómsmálaráðuneytið', email: 'postur@personuvernd.is', status: 'verified', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-31', name: 'Orkustofnun', raduneyti: 'Umhverfis-, orku- og loftslagsráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' },
+  { id: 'inst-32', name: 'Tollstjóri', raduneyti: 'Fjármála- og efnahagsráðuneytið', email: '', status: 'missing', source: 'database', updatedAt: '2026-09-22' }
+];
+
+export const INITIAL_POLLS: PollItem[] = [
+  {
+    id: 'poll-brand-name',
+    title: 'Hvaða vörumerki/nafn lýsir verkefninu best fyrir almenningi?',
+    description: 'Við viljum velja grípandi, traustvekjandi nafn sem festist í vitund landsmanna sem miðstöð gagnsæis og ríkisútgjalda.',
+    category: 'vorumerki',
+    status: 'active',
+    createdAt: '2026-09-22',
+    options: [
+      { id: 'opt-b1', text: 'Ríkisgát (rikisgat.is) — Formlegt, beinskeytt og alvarlegt', votes: 342 },
+      { id: 'opt-b2', text: 'OpnirReikningar — Hreint og lýsandi samfélagsnafn', votes: 198 },
+      { id: 'opt-b3', text: 'HvertFaraPeningarnir.is — Spyrjandi og vekur forvitni', votes: 145 },
+      { id: 'opt-b4', text: 'Gagnsæi.is — Vítt og yfirgripsmikið hugtak', votes: 89 }
+    ]
+  },
+  {
+    id: 'poll-b-hluti',
+    title: 'Á að opna og rýna B-hluta ríkisins líka (Landsvirkjun, Isavia, RARIK)?',
+    description: 'Þetta viðmót sýnir nú A-hluta ríkisins. Eigum við að safna gögnum og útbúa upplýsingabeiðnir fyrir opinber hlutafélög og samfélagssjóði þeirra?',
+    category: 'gogn',
+    status: 'active',
+    createdAt: '2026-09-20',
+    options: [
+      { id: 'opt-b-1', text: 'Já, klárlega! Sérstaklega styrkveitingar og samfélagssjóði', votes: 412 },
+      { id: 'opt-b-2', text: 'Já, vil líka sjá risnu, ráðgjafakaup og stjórnendakostnað', votes: 218 },
+      { id: 'opt-b-3', text: 'Nei, nóg er að fylgjast vel með A-hluta ríkisins', votes: 27 }
+    ]
+  },
+  {
+    id: 'poll-email-db',
+    title: 'Skoðanakönnun: Viltu að kerfið birti opinber netföng allra ríkisstofnana?',
+    description: 'Hversu mikilvægt er að geta sent gagnabeiðni beint á rétt tölvupóstfang stofnunar eða ráðuneytis með einum smelli út frá reikningi?',
+    category: 'gogn',
+    status: 'active',
+    createdAt: '2026-09-22',
+    options: [
+      { id: 'opt-em-1', text: 'Mjög mikilvægt — Lögboðinn réttur skv. upplýsingalögum 140/2012', votes: 289 },
+      { id: 'opt-em-2', text: 'Gagnlegt en ekki forgangsatriði, nægir að sjá tölurnar', votes: 64 },
+      { id: 'opt-em-3', text: 'Óþarfi, ég fletti bara upp í símaskránni', votes: 12 }
+    ]
+  },
+  {
+    id: 'poll-marketing-focus',
+    title: 'Hvar á Ríkisgát að beina markaðssókn sinni fyrst?',
+    description: 'Hvar næst mesti slagkrafturinn til að kynna lausnina og vekja athygli á opnum reikningum?',
+    category: 'vorumerki',
+    status: 'active',
+    createdAt: '2026-09-21',
+    options: [
+      { id: 'opt-m1', text: 'Beint til rannsóknarblaðamanna (Heimildin, RÚV, Vísir, DV)', votes: 276 },
+      { id: 'opt-m2', text: 'Facebook og samfélagsmiðlar (vekur almenna umræðu og reiði)', votes: 310 },
+      { id: 'opt-m3', text: 'Hlaðvörp og umræðuþættir um stjórnmál og efnahag', votes: 154 },
+      { id: 'opt-m4', text: 'Alþingismenn og eftirlitsnefndir þingsins', votes: 98 }
+    ]
   }
 ];
 

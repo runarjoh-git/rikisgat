@@ -17,6 +17,7 @@ export interface Stofnun {
   id?: number;
   client: string;
   invoiceCount: number;
+  lineCount?: number;
   totalAmount: number;
 }
 
@@ -84,5 +85,33 @@ export interface LocalhostFileUpdate {
   description: string;
   updatedAt: string;
   versionLabel?: string;
+}
+
+export interface StofnunEmailItem {
+  id: string;
+  name: string;
+  kennitala?: string;
+  raduneyti?: string;
+  email?: string;
+  status: 'active' | 'missing' | 'manual_review' | 'verified';
+  source?: 'database' | 'csv' | 'manual';
+  notes?: string;
+  updatedAt?: string;
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+export interface PollItem {
+  id: string;
+  title: string;
+  description: string;
+  category: 'vorumerki' | 'gogn' | 'samfelag' | 'almennt';
+  options: PollOption[];
+  status: 'active' | 'closed';
+  createdAt: string;
 }
 

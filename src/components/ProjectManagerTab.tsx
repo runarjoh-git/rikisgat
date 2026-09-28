@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle2, Clock, Calendar, Plus, Filter, CheckSquare, Square, 
   Tag, AlertCircle, Trash2, Edit3, Database, Code, Copy, Check, 
-  Download, Sparkles, User, ArrowUpDown, ChevronRight, X, Laptop, FileCode, CheckCheck, RefreshCw
+  Download, Sparkles, User, ArrowUpDown, ChevronRight, X, Laptop, FileCode, CheckCheck, RefreshCw,
+  Mail, Search, Upload, ExternalLink, ShieldCheck, HelpCircle, SlidersHorizontal, FileSpreadsheet
 } from 'lucide-react';
-import { TaskItem, LocalhostFileUpdate } from '../types';
-import { INITIAL_LOCALHOST_UPDATES } from '../data/mockData';
+import { TaskItem, LocalhostFileUpdate, StofnunEmailItem } from '../types';
+import { INITIAL_LOCALHOST_UPDATES, INITIAL_STOFNANIR_EMAILS } from '../data/mockData';
+import { ExcelImportSubTab } from './ExcelImportSubTab';
 
-const STORAGE_KEY_LOCALHOST_UPDATES = 'rikisgat_localhost_updates_v2';
+const STORAGE_KEY_LOCALHOST_UPDATES = 'rikisgat_localhost_updates_v5';
+const STORAGE_KEY_STOFNANIR_EMAILS = 'rikisgat_stofnanir_emails_v1';
 
 interface ProjectManagerTabProps {
   tasks: TaskItem[];
@@ -15,6 +18,12 @@ interface ProjectManagerTabProps {
   onAddTask: (newTask: Omit<TaskItem, 'id'>) => void;
   onDeleteTask?: (taskId: string) => void;
   onEditTask?: (task: TaskItem) => void;
+  broadSearchYearsEnabled?: boolean;
+  broadSearchMonthsEnabled?: boolean;
+  onToggleBroadSearchYears?: (enabled: boolean) => void;
+  onToggleBroadSearchMonths?: (enabled: boolean) => void;
+  broadSearchEnabled?: boolean;
+  onToggleBroadSearch?: (enabled: boolean) => void;
 }
 
 export const ProjectManagerTab: React.FC<ProjectManagerTabProps> = ({ 
@@ -22,8 +31,17 @@ export const ProjectManagerTab: React.FC<ProjectManagerTabProps> = ({
   onToggleTask, 
   onAddTask,
   onDeleteTask,
-  onEditTask
+  onEditTask,
+  broadSearchYearsEnabled = true,
+  broadSearchMonthsEnabled = true,
+  onToggleBroadSearchYears,
+  onToggleBroadSearchMonths,
+  broadSearchEnabled = false,
+  onToggleBroadSearch
 }) => {
+  // Subpage navigation under Verkefnastjóri
+  const [activeSubPage, setActiveSubPage] = useState<'tasks' | 'import' | 'emails'>('tasks');
+
   const [filterMilestone, setFilterMilestone] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -34,59 +52,96 @@ export const ProjectManagerTab: React.FC<ProjectManagerTabProps> = ({
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [activeScriptTab, setActiveScriptTab] = useState<'postgres' | 'verification' | 'backup' | 'cloud'>('postgres');
   const [copiedSql, setCopiedSql] = useState(false);
-  const [copiedFilePath, setCopiedFilePath] = useState<string | null>(null);
-  const [copiedAllPaths, setCopiedAllPaths] = useState(false);
 
-  // Localhost updates tracking state with automatic merging of new items
-  const [localhostUpdates, setLocalhostUpdates] = useState<LocalhostFileUpdate[]>(() => {
+  // Stofnanir & Tölvupóstar (Eftirlit og stjórnun) state
+  const [stofnanirEmails, setStofnanirEmails] = useState<StofnunEmailItem[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_LOCALHOST_UPDATES);
+      const saved = localStorage.getItem(STORAGE_KEY_STOFNANIR_EMAILS);
       if (saved) {
-        const parsed: LocalhostFileUpdate[] = JSON.parse(saved);
-        // Merge any updates from INITIAL_LOCALHOST_UPDATES that are missing
+        const parsed: StofnunEmailItem[] = JSON.parse(saved);
         const existingIds = new Set(parsed.map(p => p.id));
-        const missing = INITIAL_LOCALHOST_UPDATES.filter(item => !existingIds.has(item.id));
+        const missing = INITIAL_STOFNANIR_EMAILS.filter(item => !existingIds.has(item.id));
         if (missing.length > 0) {
           return [...parsed, ...missing];
         }
         return parsed;
       }
     } catch (e) {
-      console.error('Failed to load localhost updates from localStorage', e);
+      console.error('Failed to load stofnanir emails from localStorage', e);
     }
-    return INITIAL_LOCALHOST_UPDATES;
+    return INITIAL_STOFNANIR_EMAILS;
   });
 
-  // Save localhost updates to localStorage
+  const [emailFilterStatus, setEmailFilterStatus] = useState<'all' | 'missing' | 'verified'>('missing');
+  const [emailSearch, setEmailSearch] = useState('');
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [tempEmailValue, setTempEmailValue] = useState('');
+  const [tempRaduneytiValue, setTempRaduneytiValue] = useState('');
+  const [showAddInstModal, setShowAddInstModal] = useState(false);
+  const [newInstName, setNewInstName] = useState('');
+  const [newInstEmail, setNewInstEmail] = useState('');
+  const [newInstRaduneyti, setNewInstRaduneyti] = useState('');
+
+  // Vista stofnanirEmails í localStorage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_LOCALHOST_UPDATES, JSON.stringify(localhostUpdates));
+      localStorage.setItem(STORAGE_KEY_STOFNANIR_EMAILS, JSON.stringify(stofnanirEmails));
     } catch (e) {
-      console.error('Failed to save localhost updates', e);
+      console.error('Failed to save stofnanir emails', e);
     }
-  }, [localhostUpdates]);
+  }, [stofnanirEmails]);
 
-  const handleRemoveLocalhostUpdate = (id: string) => {
-    setLocalhostUpdates(prev => prev.filter(u => u.id !== id));
+  const handleUpdateEmail = (id: string, email: string, raduneyti?: string) => {
+    const trimmed = email.trim();
+    setStofnanirEmails(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      return {
+        ...item,
+        email: trimmed,
+        raduneyti: raduneyti !== undefined ? raduneyti.trim() : item.raduneyti,
+        status: trimmed ? 'verified' : 'missing',
+        updatedAt: new Date().toISOString().split('T')[0]
+      };
+    }));
+    setEditingEmailId(null);
   };
 
-  const handleResetLocalhostUpdates = () => {
-    setLocalhostUpdates(INITIAL_LOCALHOST_UPDATES);
+  const handleAddInstitutionEmail = () => {
+    if (!newInstName.trim()) return;
+    const newItem: StofnunEmailItem = {
+      id: `inst-custom-${Date.now()}`,
+      name: newInstName.trim(),
+      email: newInstEmail.trim(),
+      raduneyti: newInstRaduneyti.trim() || 'Óskráð ráðuneyti',
+      status: newInstEmail.trim() ? 'verified' : 'missing',
+      source: 'manual',
+      updatedAt: new Date().toISOString().split('T')[0]
+    };
+    setStofnanirEmails(prev => [newItem, ...prev]);
+    setNewInstName('');
+    setNewInstEmail('');
+    setNewInstRaduneyti('');
+    setShowAddInstModal(false);
   };
 
-  const handleCopyFilePath = (filePath: string) => {
-    navigator.clipboard.writeText(filePath).then(() => {
-      setCopiedFilePath(filePath);
-      setTimeout(() => setCopiedFilePath(null), 1800);
-    });
+  const handleExportMissingCsv = () => {
+    const missing = stofnanirEmails.filter(i => !i.email || i.status === 'missing');
+    const header = 'Stofnun;Ráðuneyti;Staða;Tölvupóstur\n';
+    const rows = missing.map(i => `"${i.name}";"${i.raduneyti || ''}";"Vantar tölvupóst";""`).join('\n');
+    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `stofnanir_vantar_tolvupost_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  const handleCopyAllPaths = () => {
-    const text = localhostUpdates.map(u => u.filePath).join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedAllPaths(true);
-      setTimeout(() => setCopiedAllPaths(false), 2000);
-    });
+  const handleResetStofnanir = () => {
+    if (confirm('Viltu endurstilla listann yfir stofnanir og tölvupósta?')) {
+      setStofnanirEmails(INITIAL_STOFNANIR_EMAILS);
+    }
   };
 
   // New task form state
@@ -192,32 +247,92 @@ pause
 :: ============================================================`;
 
   const cloudScript = `# ============================================================
-# SKÝJAHÝSING Í FYRSTA SKIPTI (Node.js + PostgreSQL)
-# Staðbundin slóð: D:\\minn-vefthjonn\\minn-server
+# SKÝJAHÝSING Í FYRSTA SKIPTI: HETZNER CLOUD CAX21 + COOLIFY
+# Staðsetning: Helsinki, Finnland (hel1) eða Falkenstein, Þýskaland (fsn1)
+# Server gerð: CAX21 (Ampere Altra ARM64, 4 vCPU, 8 GB RAM, 80 GB NVMe SSD)
+# Verð: ~€6,00 á mánuði (~900 kr. án vsk)
 # ============================================================
 
-# 1. HVERNIG SKÝJAHÝSING LEYSIR FTP AF HÓLMI:
-# - Gamli mátinn: Tengjast með FTP/FileZilla og hlaða skrám handvirkt upp.
-# - Nýi skýjamátinn: 
-#     a) Þú vinnur á fartölvunni í D:\\minn-vefthjonn\\minn-server (með eða án nets).
-#     b) Þegar þú ert með net keyrir þú í þeirri möppu:
-#          git commit -am "Ný útgáfa af RíkisGát"
-#          git push
-#     c) Skýjahýsingin (t.d. Render, Railway eða Hetzner) hleður sjálfkrafa
-#        niður nýja kóðanum og ræsir vefinn á 60 sekúndum.
-#     d) Engin handvirk FTP mistök, engar hálfkláraðar skrár!
+# ------------------------------------------------------------
+# SKREF 1: STOFNA ÞJÓN HJÁ HETZNER CLOUD
+# ------------------------------------------------------------
+# 1. Farðu á https://console.hetzner.cloud og skráðu þig inn.
+# 2. Smelltu á "+ Add Server":
+#    - Location: Helsinki (hel1) [eða Falkenstein (fsn1)]
+#    - Image: Ubuntu 24.04 LTS
+#    - Type: Arm64 -> CAX21 (4 vCPU, 8 GB RAM, 80 GB NVMe)
+#    - SSH Keys: Bættu við þínum opinbera SSH lykli (id_ed25519.pub)
+#    - Name: rikisgat-prod
+# 3. Smelltu á "Create & Buy Now". Eftir ~10 sekúndur færðu fasta IP-tölu!
 
-# 2. UMHVERFISBREYTUR (D:\\minn-vefthjonn\\minn-server\\.env):
+# ------------------------------------------------------------
+# SKREF 2: TENGJAST MEÐ SSH OG SETJA UPP COOLIFY (EINKA-PAAS)
+# ------------------------------------------------------------
+# Tengstu þjóninum úr PowerShell eða Terminal:
+ssh root@<IP_TALA_THJONS>
 
-# Á FARTÖLVU (Offline / Localhost á D: drifi):
-DATABASE_URL=postgresql://postgres:DITT_LYKILORD@localhost:5432/rikisgat
+# Keyrðu eina opinberu uppsetningarskipun Coolify:
+curl -fsSL https://coolify.io/install.sh | bash
+
+# Þegar uppsetningu lýkur (tekur ~2-3 mínútur) opnarðu í vafra:
+# http://<IP_TALA_THJONS>:8000
+# Þar býrðu til aðalnotanda og lykilorð fyrir Coolify stjórnborðið þitt.
+
+# ------------------------------------------------------------
+# SKREF 3: POSTGRESQL 18 GAGNAGRUNNUR Í COOLIFY
+# ------------------------------------------------------------
+# 1. Inni í Coolify: Smelltu á "Projects" -> "Production" -> "+ New Resource".
+# 2. Veldu "PostgreSQL" (Standalone eða Docker).
+# 3. Sláðu inn:
+#    - Database Name: rikisgat
+#    - User: postgres (eða rikisgat_user)
+#    - Password: <VELDU_STERKT_LYKILORÐ>
+# 4. Vegna þess að CAX21 hefur 8 GB RAM, stilltu Postgres stillingar í Coolify:
+#    shared_buffers = '2GB'
+#    effective_cache_size = '6GB'
+#    work_mem = '64MB'
+# 5. Kveiktu á "Automated Backups" (Sjálfvirk dagleg afritun).
+
+# ------------------------------------------------------------
+# SKREF 4: FLYTJA GÖGN ÚR D: DRÍFI Á FARTÖLVU YFIR Á HETZNER
+# ------------------------------------------------------------
+# Á fartölvunni þinni (í PowerShell eða cmd):
+# Taktu ferskt afrit af staðbundna grunninum:
+"D:\\PostgreSQL\\bin\\pg_dump.exe" -Fc -U postgres -d rikisgat -f "D:\\afrit_rikisgat\\rikisgat_prod.dump"
+
+# Sendu afritið yfir á Hetzner þjóninn með SCP:
+scp "D:\\afrit_rikisgat\\rikisgat_prod.dump" root@<IP_TALA_THJONS>:/root/
+
+# Inni á Hetzner þjóninum: Endurheimtu inn í nýja grunninn:
+# (Coolify sýnir rétta innri/ytri gátt og tengistreng)
+pg_restore -U postgres -d rikisgat -v /root/rikisgat_prod.dump
+
+# ------------------------------------------------------------
+# SKREF 5: TENGJA RÍKISGÁT GITHUB REPO VIÐ COOLIFY (GIT PUSH)
+# ------------------------------------------------------------
+# 1. Inni í Coolify: Smelltu á "+ New Resource" -> "Public/Private Repository".
+# 2. Tengdu GitHub reikninginn þinn og veldu Ríkisgát verkefnið.
+# 3. Stilltu:
+#    - Build Pack: Nixpacks (greinir Node.js sjálfkrafa)
+#    - Build Command: npm run build
+#    - Start Command: npm run start
+#    - Port: 3000
+# 4. Umhverfisbreytur (Environment Variables) í Coolify:
 PORT=3000
-NODE_ENV=development
+NODE_ENV=production
+DATABASE_URL=postgresql://postgres:LYKILORD@postgres:5432/rikisgat
 
-# Í SKÝINU (Production):
-# DATABASE_URL=postgresql://rikisgat_user:LEYNORÐ_Í_SKÝI@db.provider.com:5432/rikisgat?sslmode=require
-# PORT=3000
-# NODE_ENV=production`;
+# 5. Núna þarftu aldrei aftur að nota FTP!
+#    Hvert "git push" á GitHub byggir vefinn sjálfkrafa á 60 sekúndum!
+
+# ------------------------------------------------------------
+# SKREF 6: TENGJA LÉN (RIKISGAT.IS) OG VIRKJA ÓKEYPIS SSL
+# ------------------------------------------------------------
+# 1. Í Coolify viðmótinu við Ríkisgát:
+#    Sláðu inn Domains: https://rikisgat.is, https://www.rikisgat.is
+# 2. Hjá ISNIC eða nafnaþjóni:
+#    Búðu til A færslu fyrir @ og www sem bendir á IP tölu Hetzner þjónsins.
+# 3. Coolify sækir og endurnýjar sjálfvirkt Let's Encrypt SSL vottorð (HTTPS).`;
 
   const verificationScript = `-- ============================================================
 -- ATHUGA HVORT RÍKISGÁT SÉ MEÐ ALLT Í POSTGRESQL 18:
@@ -291,6 +406,145 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
 
   return (
     <div className="space-y-6">
+      {/* Undirsíður undir Verkefnastjóra (Subpage Navigation) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <button
+          onClick={() => setActiveSubPage('tasks')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+            activeSubPage === 'tasks'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-700 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <CheckSquare className="w-4 h-4" />
+          <span>📋 Verkefnaáætlun & Framvinda ({tasks.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubPage('import')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+            activeSubPage === 'import'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-700 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+          <span>📂 Gagnainnlestur (Excel / CSV)</span>
+          <span className="bg-emerald-100 text-emerald-900 text-[10px] px-1.5 py-0.5 rounded font-bold">Nýtt</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubPage('emails')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+            activeSubPage === 'emails'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-700 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <Mail className="w-4 h-4" />
+          <span>📬 Stofnanir & Tölvupóstar ({stofnanirEmails.length})</span>
+        </button>
+      </div>
+
+      {/* SUBPAGE 1: Gagnainnlestur & Skráaskoðun (Excel / CSV innlestur í PostgreSQL) */}
+      {activeSubPage === 'import' && (
+        <ExcelImportSubTab />
+      )}
+
+      {/* SUBPAGE 2: Verkefnaáætlun & Framvinda */}
+      {activeSubPage === 'tasks' && (
+        <>
+          {/* Stjórntæki fyrir forsíðu: Breiðari leit á forsíðu (Af / Á fyrir ár og mánuð) */}
+          <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-900 shadow-xs space-y-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-neutral-900" />
+                <h2 className="text-sm font-black uppercase tracking-tight text-neutral-900">
+                  Stjórntæki fyrir forsíðu: Breiðari leit á forsíðu (Af / Á)
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-600 max-w-3xl leading-relaxed">
+                Stýrir því hvort almenningsvefurinn (forsíðan) bjóði upp á valkosti fyrir öll ár eða alla mánuði í síum. Sé slökkt á rofa takmarkast forsíðan sjálfkrafa við hefðbundna leit í stökum árum eða mánuðum.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {/* Takki 1: Breiðari leit fyrir ÁR */}
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl border border-neutral-200 bg-neutral-50/70">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-neutral-900 uppercase">
+                      1. Breiðari leit fyrir ár
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      broadSearchYearsEnabled 
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300' 
+                        : 'bg-neutral-100 text-neutral-600 border-neutral-300'
+                    }`}>
+                      {broadSearchYearsEnabled ? 'Á (Virk)' : 'Af (Óvirk)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 leading-snug">
+                    Býður upp á <strong>„🌟 Öll ár (2017–2026)“</strong> í ársfellilistanum á forsíðu.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={broadSearchYearsEnabled}
+                  onClick={() => onToggleBroadSearchYears && onToggleBroadSearchYears(!broadSearchYearsEnabled)}
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    broadSearchYearsEnabled ? 'bg-neutral-900' : 'bg-neutral-300'
+                  }`}
+                  title="Kveikja eða slökkva á „Öll ár“ á forsíðu"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      broadSearchYearsEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Takki 2: Breiðari leit fyrir MÁNUÐI */}
+              <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl border border-neutral-200 bg-neutral-50/70">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-neutral-900 uppercase">
+                      2. Breiðari leit fyrir mánuð
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      broadSearchMonthsEnabled 
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300' 
+                        : 'bg-neutral-100 text-neutral-600 border-neutral-300'
+                    }`}>
+                      {broadSearchMonthsEnabled ? 'Á (Virk)' : 'Af (Óvirk)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 leading-snug">
+                    Býður upp á <strong>„🌟 Allir mánuðir (1–12)“</strong> í mánaðarfellilistanum á forsíðu.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={broadSearchMonthsEnabled}
+                  onClick={() => onToggleBroadSearchMonths && onToggleBroadSearchMonths(!broadSearchMonthsEnabled)}
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    broadSearchMonthsEnabled ? 'bg-neutral-900' : 'bg-neutral-300'
+                  }`}
+                  title="Kveikja eða slökkva á „Allir mánuðir“ á forsíðu"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      broadSearchMonthsEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
       {/* Overview Card */}
       <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -374,9 +628,9 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
             className="p-1.5 bg-neutral-50 border border-neutral-300 rounded text-xs font-semibold"
           >
             <option value="all">Öll áföng (M1–M4)</option>
-            <option value="M1">M1: Grunnur & MySQL</option>
-            <option value="M2">M2: Lögfræði & Gögn</option>
-            <option value="M3">M3: 1984.is Hýsing</option>
+            <option value="M1">M1: Grunnur & PostgreSQL 18</option>
+            <option value="M2">M2: Ótengd vinna & Lögfræði</option>
+            <option value="M3">M3: Hetzner Cloud (CAX21) & Coolify</option>
             <option value="M4">M4: Sjálfvirkni & Styrkir</option>
           </select>
 
@@ -502,143 +756,336 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
           })
         )}
       </div>
+      </>
+      )}
 
-      {/* Localhost Updates Tracking Card (Vantar að uppfæra á localhost) */}
+      {/* SUBPAGE 3: Stofnanir & Tölvupóstar (Eftirlit og stjórnun) */}
+      {(activeSubPage === 'emails' || activeSubPage === 'tasks') && (
       <div className="bg-white rounded-xl border border-neutral-900 p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200 pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <Laptop className="w-4 h-4 text-neutral-900" />
+              <Mail className="w-4 h-4 text-neutral-900" />
               <h3 className="text-sm font-black uppercase tracking-tight text-neutral-900">
-                Vantar að uppfæra á localhost
+                Stofnanir & Tölvupóstar (Upplýsingalög nr. 140/2012)
               </h3>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                localhostUpdates.length > 0
+                stofnanirEmails.filter(i => !i.email || i.status === 'missing').length > 0
                   ? 'bg-amber-100 text-amber-900 border-amber-300'
                   : 'bg-emerald-100 text-emerald-900 border-emerald-300'
               }`}>
-                {localhostUpdates.length} {localhostUpdates.length === 1 ? 'skrá' : 'skrár'}
+                {stofnanirEmails.filter(i => !i.email || i.status === 'missing').length} vantar tölvupóst
               </span>
             </div>
             <p className="text-xs text-neutral-600 mt-1">
-              Listi yfir skrár sem hafa breyst í kóðanum. Þú getur afritað slóðirnar, uppfært skrárnar á tölvunni þinni og smellt á ruslafötuna eða merkt sem lokið til að taka þær af listanum.
+              Hér er yfirlit yfir allar stofnanir, tilheyrandi ráðuneyti og opinber tölvupóstföng fyrir fyrirspurnir og gagnabeiðnir. Hægt er að skrá og uppfæra tölvupósta beint eða sækja lista yfir þær stofnanir sem vantar.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            {localhostUpdates.length > 0 && (
-              <button
-                onClick={handleCopyAllPaths}
-                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-neutral-300"
-                title="Afrita lista yfir allar skráarslóðir til að líma í skipanalínu eða ritil"
-              >
-                {copiedAllPaths ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-700">Allar slóðir afritaðar!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-neutral-700" />
-                    <span>Afrita allar slóðir ({localhostUpdates.length})</span>
-                  </>
-                )}
-              </button>
-            )}
-
             <button
-              onClick={handleResetLocalhostUpdates}
-              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Samstilla við nýjasta kóða í AI Studio (hlaða öllum 6 uppfærðum skrám inn)"
+              onClick={handleExportMissingCsv}
+              className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-neutral-300"
+              title="Sækja CSV skrá yfir stofnanir sem vantar tölvupóstfang til að greina og fylla út"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Samstilla við AI Studio ({INITIAL_LOCALHOST_UPDATES.length} skrár)</span>
+              <Download className="w-3.5 h-3.5 text-neutral-700" />
+              <span>Sækja CSV ({stofnanirEmails.filter(i => !i.email || i.status === 'missing').length})</span>
             </button>
 
-            {localhostUpdates.length > 0 && (
-              <button
-                onClick={() => setLocalhostUpdates([])}
-                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-neutral-300"
-                title="Hreinsa allar skrár af listanum"
-              >
-                <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Merkja allt klárað</span>
-              </button>
-            )}
+            <button
+              onClick={() => setShowAddInstModal(true)}
+              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Bæta við stofnun</span>
+            </button>
+
+            <button
+              onClick={handleResetStofnanir}
+              className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded transition cursor-pointer border border-neutral-200"
+              title="Endurstilla lista í sjálfgefnar stofnanir"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
-        {localhostUpdates.length === 0 ? (
-          <div className="py-6 px-4 text-center bg-emerald-50/50 rounded-xl border border-emerald-200 text-emerald-800 text-xs">
-            <div className="font-bold text-sm flex items-center justify-center gap-1.5 text-emerald-900">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Allt uppfært á localhost!</span>
-            </div>
-            <p className="mt-1 text-emerald-700 text-[11px]">
-              Engar óafgreiddar skrár bíða uppfærslu á vélbúnaði þínum. Nýjar skrár munu bætast sjálfkrafa hér við næstu breytingar.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-lg overflow-hidden">
-            {localhostUpdates.map(upd => (
-              <div
-                key={upd.id}
-                className="p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white hover:bg-neutral-50/80 transition"
+        {/* Leitar- og síustika */}
+        <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={emailSearch}
+              onChange={e => setEmailSearch(e.target.value)}
+              placeholder="Leita eftir heiti stofnunar eða ráðuneytis..."
+              className="w-full pl-8 pr-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+            />
+            {emailSearch && (
+              <button
+                onClick={() => setEmailSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-xs"
               >
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <FileCode className="w-4 h-4 text-neutral-700 shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-black text-neutral-900 break-all bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200">
-                        {upd.filePath}
-                      </span>
-                      {upd.versionLabel && (
-                        <span className="text-[10px] font-bold bg-neutral-900 text-white px-1.5 py-0.2 rounded">
-                          {upd.versionLabel}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-neutral-400 font-mono">
-                        {upd.updatedAt}
-                      </span>
-                    </div>
-                    <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
-                      {upd.description}
-                    </p>
-                  </div>
-                </div>
+                ✕
+              </button>
+            )}
+          </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                  <button
-                    onClick={() => handleCopyFilePath(upd.filePath)}
-                    className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-neutral-200"
-                    title="Afrita skráarslóð í klemmuspjald"
-                  >
-                    {copiedFilePath === upd.filePath ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-700 font-bold">Afritað!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-neutral-600" />
-                        <span>Afrita slóð</span>
-                      </>
-                    )}
-                  </button>
+          <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded border border-neutral-200 shrink-0 text-xs font-semibold">
+            <button
+              onClick={() => setEmailFilterStatus('missing')}
+              className={`px-2.5 py-1 rounded transition ${
+                emailFilterStatus === 'missing' 
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs' 
+                  : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              Vantar ({stofnanirEmails.filter(i => !i.email || i.status === 'missing').length})
+            </button>
+            <button
+              onClick={() => setEmailFilterStatus('verified')}
+              className={`px-2.5 py-1 rounded transition ${
+                emailFilterStatus === 'verified' 
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs' 
+                  : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              Skráð ({stofnanirEmails.filter(i => i.email && i.status !== 'missing').length})
+            </button>
+            <button
+              onClick={() => setEmailFilterStatus('all')}
+              className={`px-2.5 py-1 rounded transition ${
+                emailFilterStatus === 'all' 
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs' 
+                  : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              Allt ({stofnanirEmails.length})
+            </button>
+          </div>
+        </div>
 
-                  <button
-                    onClick={() => handleRemoveLocalhostUpdate(upd.id)}
-                    className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer border border-transparent hover:border-red-200"
-                    title="Eyða af lista (búið að uppfæra á localhost)"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+        {/* Tafla yfir stofnanir */}
+        {(() => {
+          const filtered = stofnanirEmails.filter(item => {
+            const isMissing = !item.email || item.status === 'missing';
+            if (emailFilterStatus === 'missing' && !isMissing) return false;
+            if (emailFilterStatus === 'verified' && isMissing) return false;
+            if (emailSearch.trim()) {
+              const q = emailSearch.toLowerCase();
+              return item.name.toLowerCase().includes(q) || (item.raduneyti && item.raduneyti.toLowerCase().includes(q)) || (item.email && item.email.toLowerCase().includes(q));
+            }
+            return true;
+          });
+
+          if (filtered.length === 0) {
+            return (
+              <div className="py-8 px-4 text-center bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-600 text-xs">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 mx-auto mb-1.5" />
+                <div className="font-bold text-neutral-900">
+                  {emailFilterStatus === 'missing' ? 'Engar stofnanir á lista vanta tölvupóst!' : 'Engar stofnanir fundust með þessum leitarskilyrðum.'}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            );
+          }
+
+          return (
+            <div className="border border-neutral-200 rounded-lg overflow-hidden divide-y divide-neutral-100 max-h-[420px] overflow-y-auto">
+              {filtered.map(item => {
+                const isMissing = !item.email || item.status === 'missing';
+                const isEditing = editingEmailId === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white hover:bg-neutral-50/80 transition"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-neutral-900">
+                          {item.name}
+                        </span>
+                        {item.raduneyti && (
+                          <span className="text-[10px] font-medium bg-neutral-100 text-neutral-700 px-1.5 py-0.5 rounded border border-neutral-200">
+                            {item.raduneyti}
+                          </span>
+                        )}
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                          isMissing
+                            ? 'bg-amber-50 text-amber-900 border-amber-200'
+                            : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                        }`}>
+                          {isMissing ? 'Vantar netfang' : 'Skráð'}
+                        </span>
+                      </div>
+
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 mt-2">
+                          <input
+                            type="email"
+                            value={tempEmailValue}
+                            onChange={e => setTempEmailValue(e.target.value)}
+                            placeholder="fyrirspurnir@stofnun.is"
+                            className="text-xs px-2 py-1 border border-neutral-300 rounded focus:ring-1 focus:ring-neutral-900 focus:outline-none flex-1 max-w-xs"
+                            autoFocus
+                          />
+                          <input
+                            type="text"
+                            value={tempRaduneytiValue}
+                            onChange={e => setTempRaduneytiValue(e.target.value)}
+                            placeholder="Ráðuneyti..."
+                            className="text-xs px-2 py-1 border border-neutral-300 rounded focus:ring-1 focus:ring-neutral-900 focus:outline-none flex-1 max-w-xs"
+                          />
+                          <button
+                            onClick={() => handleUpdateEmail(item.id, tempEmailValue, tempRaduneytiValue)}
+                            className="px-2.5 py-1 bg-neutral-900 text-white rounded text-xs font-bold hover:bg-neutral-800"
+                          >
+                            Vista
+                          </button>
+                          <button
+                            onClick={() => setEditingEmailId(null)}
+                            className="px-2.5 py-1 bg-neutral-100 text-neutral-700 rounded text-xs font-medium hover:bg-neutral-200"
+                          >
+                            Hætta við
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-1">
+                          {item.email ? (
+                            <a
+                              href={`mailto:${item.email}`}
+                              className="text-xs font-mono text-neutral-800 hover:text-neutral-950 underline decoration-neutral-300"
+                            >
+                              {item.email}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-amber-700 italic">
+                              Ekkert tölvupóstfang skráð
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {!isEditing && (
+                      <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingEmailId(item.id);
+                            setTempEmailValue(item.email || '');
+                            setTempRaduneytiValue(item.raduneyti || '');
+                          }}
+                          className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded text-xs font-medium flex items-center gap-1 transition border border-neutral-200 cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3 text-neutral-600" />
+                          <span>{item.email ? 'Breyta' : 'Skrá netfang'}</span>
+                        </button>
+                        {item.email && (
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(item.email || '');
+                            }}
+                            className="p-1 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded transition cursor-pointer"
+                            title="Afrita netfang"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setStofnanirEmails(prev => prev.filter(i => i.id !== item.id));
+                          }}
+                          className="p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                          title="Fjarlægja af lista"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
+      )}
+
+      {/* Modal: Bæta við nýrri stofnun */}
+      {showAddInstModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 border border-neutral-200 shadow-xl space-y-4">
+            <div className="flex justify-between items-center border-b border-neutral-100 pb-3">
+              <h3 className="text-base font-black text-neutral-900 uppercase tracking-tight">
+                Bæta við stofnun
+              </h3>
+              <button
+                onClick={() => setShowAddInstModal(false)}
+                className="text-neutral-400 hover:text-neutral-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Heiti stofnunar *
+                </label>
+                <input
+                  type="text"
+                  value={newInstName}
+                  onChange={e => setNewInstName(e.target.value)}
+                  placeholder="t.d. Rannsóknamiðstöð Íslands"
+                  className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Ráðuneyti
+                </label>
+                <input
+                  type="text"
+                  value={newInstRaduneyti}
+                  onChange={e => setNewInstRaduneyti(e.target.value)}
+                  placeholder="t.d. Háskóla-, iðnaðar- og nýsköpunarráðuneytið"
+                  className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
+                  Tölvupóstfang fyrir fyrirspurnir
+                </label>
+                <input
+                  type="email"
+                  value={newInstEmail}
+                  onChange={e => setNewInstEmail(e.target.value)}
+                  placeholder="t.d. postur@stofnun.is (má vera tómt ef vantar)"
+                  className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-neutral-100">
+              <button
+                onClick={() => setShowAddInstModal(false)}
+                className="px-4 py-2 border border-neutral-200 text-neutral-700 rounded text-xs font-bold hover:bg-neutral-50"
+              >
+                Hætta við
+              </button>
+              <button
+                onClick={handleAddInstitutionEmail}
+                disabled={!newInstName.trim()}
+                className="px-4 py-2 bg-neutral-900 text-white rounded text-xs font-bold hover:bg-neutral-800 disabled:opacity-50"
+              >
+                Vista stofnun
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Task Modal */}
       {showAddModal && (
@@ -685,9 +1132,9 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
                     onChange={e => setNewMilestone(e.target.value as any)}
                     className="w-full p-2 border border-neutral-300 rounded font-semibold"
                   >
-                    <option value="M1">M1: Grunnur & MySQL</option>
-                    <option value="M2">M2: Lögfræði & Gögn</option>
-                    <option value="M3">M3: 1984.is Hýsing</option>
+                    <option value="M1">M1: Grunnur & PostgreSQL 18</option>
+                    <option value="M2">M2: Ótengd vinna & Lögfræði</option>
+                    <option value="M3">M3: Hetzner Cloud (CAX21) & Coolify</option>
                     <option value="M4">M4: Sjálfvirkni & Styrkir</option>
                   </select>
                 </div>
@@ -892,7 +1339,7 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
                   activeScriptTab === 'cloud' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
                 }`}
               >
-                <span>☁️ Skýjahýsing & Git (.env)</span>
+                <span>☁️ Hetzner CAX21 & Coolify (.env)</span>
               </button>
             </div>
 
@@ -904,7 +1351,7 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
               <span className="text-[11px] text-neutral-500 font-medium">
                 {activeScriptTab === 'postgres' && 'Keyrðu í pgAdmin 4 fyrir leifturhraða'}
                 {activeScriptTab === 'backup' && 'Taktu afrit á harða diskinn áður en farið er á ferðalag'}
-                {activeScriptTab === 'cloud' && 'Git push uppfærir vefinn sjálfkrafa í skýinu án FTP'}
+                {activeScriptTab === 'cloud' && 'Hetzner CAX21 (Finnland/Þýskaland) með Coolify: Git push uppfærir á 60 sekúndum'}
               </span>
               <div className="flex gap-2">
                 <button
