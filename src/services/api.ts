@@ -593,30 +593,75 @@ export async function fetchExcelFiles(): Promise<ExcelFilesResponse> {
 }
 
 export async function inspectServerFile(filePath: string): Promise<any> {
-  const res = await fetch('/api/inspect-server-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath })
-  });
-  return await res.json();
+  try {
+    const res = await fetch('/api/inspect-server-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath })
+    });
+    const cType = res.headers.get('content-type') || '';
+    if (!cType.includes('application/json')) {
+      const text = await res.text();
+      if (text.includes('<!DOCTYPE') || res.status === 404) {
+        return {
+          success: false,
+          error: 'Bakendinn á localhost svarar ekki á /api/inspect-server-file. Vantar að uppfæra server.ts á localhost og endurræsa Node.js þjóninn.'
+        };
+      }
+      return { success: false, error: `Óvænt svar (HTTP ${res.status}): ${text.slice(0, 150)}` };
+    }
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 export async function importInvoiceBatch(batch: any[], dryRun = false): Promise<any> {
-  const res = await fetch('/api/import-invoices', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ batch, dryRun })
-  });
-  return await res.json();
+  try {
+    const res = await fetch('/api/import-invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batch, dryRun })
+    });
+    const cType = res.headers.get('content-type') || '';
+    if (!cType.includes('application/json')) {
+      const text = await res.text();
+      if (text.includes('<!DOCTYPE') || res.status === 404) {
+        return {
+          success: false,
+          error: 'Bakendinn á localhost vantar nýja endapunktinn /api/import-invoices. Vantar að uppfæra server.ts á localhost og endurræsa Node.js þjóninn.'
+        };
+      }
+      return { success: false, error: `Óvænt svar frá bakenda (HTTP ${res.status}): ${text.slice(0, 150)}` };
+    }
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 export async function importServerFile(filePath: string, dryRun = false): Promise<any> {
-  const res = await fetch('/api/import-server-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath, dryRun })
-  });
-  return await res.json();
+  try {
+    const res = await fetch('/api/import-server-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath, dryRun })
+    });
+    const cType = res.headers.get('content-type') || '';
+    if (!cType.includes('application/json')) {
+      const text = await res.text();
+      if (text.includes('<!DOCTYPE') || res.status === 404) {
+        return {
+          success: false,
+          error: 'Bakendinn á localhost vantar nýja endapunktinn /api/import-server-file. Vantar að uppfæra server.ts á localhost og endurræsa Node.js þjóninn.'
+        };
+      }
+      return { success: false, error: `Óvænt svar frá bakenda (HTTP ${res.status}): ${text.slice(0, 150)}` };
+    }
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 export default {

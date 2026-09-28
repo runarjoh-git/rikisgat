@@ -542,49 +542,62 @@ WHERE tablename = 'reikningar';`;
 
       {/* 3. FLOW VIEW */}
       {activeSubTab === 'flow' && (
-        <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs space-y-5">
+        <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-xs space-y-6">
           <div>
             <h3 className="text-lg font-bold text-neutral-900 tracking-tight flex items-center gap-2">
               <Cpu className="w-5 h-5 text-neutral-800" />
-              Gagnavinnsluflæði: D:\ Drif á Fartölvu yfir í Skýjahýsingu
+              Gagnavinnsluflæði: D:\ Drif á Fartölvu yfir í Skýjahýsingu á Hetzner
             </h3>
-            <p className="text-xs text-neutral-500">
-              Heildarferlið frá staðbundinni vinnslu á D:\ drifi (án internets) yfir í sjálfvirka skýjadreifingu með Git.
+            <p className="text-xs text-neutral-500 mt-1">
+              Heildarferlið frá vinnslu á fartölvu, vistun í GitHub Desktop og sjálfvirkri uppfærslu á <strong>test.rikisgat.is</strong> / <strong>rikisgat.is</strong>.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
               <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">1</div>
-              <div className="font-bold text-xs text-neutral-900">PostgreSQL 18 á D:\</div>
+              <div className="font-bold text-xs text-neutral-900">1. Kóði í AI Studio & Localhost</div>
               <p className="text-[11px] text-neutral-600 leading-relaxed">
-                Gögn geymd í <code>D:\PostgreSQL\data</code>. Composite flýtivísar tryggja &lt;0,005s afköst á 18M færslum í pgAdmin 4.
+                Nýir eiginleikar og breytingar eru smíðaðar hér. Þegar nýr kóði er sóttur (t.d. sem <code>.zip</code>) er honum smellt yfir möppuna á fartölvunni í <code>D:\minn-vefthjonn\rikisgat</code>.
               </p>
             </div>
 
             <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
               <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">2</div>
-              <div className="font-bold text-xs text-neutral-900">Staðbundið Afrit án nets</div>
+              <div className="font-bold text-xs text-neutral-900">2. GitHub Desktop (1 smellur)</div>
               <p className="text-[11px] text-neutral-600 leading-relaxed">
-                <code>D:\afrit_rikisgat\backup.bat</code> keyrir <code>pg_dump.exe</code> og tekur öryggisafrit á diskinn. Gögn tapast aldrei á ferðalögum.
+                GitHub Desktop tekur sjálfkrafa eftir breyttum skrám. Skrifaðu stutta skýringu í Summary, ýttu á <strong>Commit to main</strong> og svo <strong>Push origin</strong>.
               </p>
             </div>
 
             <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
               <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">3</div>
-              <div className="font-bold text-xs text-neutral-900">Node.js í minn-server</div>
+              <div className="font-bold text-xs text-neutral-900">3. Coolify í Skýinu (Hetzner)</div>
               <p className="text-[11px] text-neutral-600 leading-relaxed">
-                Forritið keyrir í <code>D:\minn-vefthjonn\minn-server</code>. Tengist local PostgreSQL gegnum <code>.env</code> umhverfisbreytur.
+                Coolify á Hetzner þjóninum greinir nýja kóðann samstundis gegnum GitHub Webhook, byggir forritið (Vite + Node) og ræsir það með núll niðritíma.
               </p>
             </div>
 
             <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
               <div className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-xs">4</div>
-              <div className="font-bold text-xs text-emerald-900">Skýjahýsing með Git</div>
+              <div className="font-bold text-xs text-emerald-900">4. Lifandi á test.rikisgat.is</div>
               <p className="text-[11px] text-emerald-800 leading-relaxed">
-                Kveðja FTP: <code>git push</code> uppfærir vefinn sjálfkrafa í skýinu á 60 sekúndum með ókeypis sjálfvirku SSL vottorði.
+                Vefurinn er virkur með sjálfvirku SSL vottorði (HTTPS) tengdur við PostgreSQL 18 grunninn (18,57M færslur) á <code>2.28.232.150:5432</code>.
               </p>
             </div>
+          </div>
+
+          {/* Detailed step-by-step checklist */}
+          <div className="bg-neutral-900 text-neutral-100 p-5 rounded-xl space-y-3 font-mono text-xs">
+            <div className="font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <span>⚡ Flýtihandbók: Hvernig á að senda nýjustu breytingar í loftið</span>
+            </div>
+            <ol className="list-decimal list-inside space-y-2 text-neutral-300 leading-relaxed">
+              <li><strong className="text-white">Opna GitHub Desktop:</strong> Þar sérðu allar breyttar kóðaskrár merktar með gulu/grænu merki.</li>
+              <li><strong className="text-white">Pössum .gitignore reglur:</strong> Stórar gagnaskrár (<code>.xlsx</code>, <code>.csv</code>, <code>.dump</code>) eru sjálfkrafa útilokaðar svo aðeins hreinn forritunarkóði fer á netið.</li>
+              <li><strong className="text-white">Commit & Push:</strong> Smelltu á <em>Commit to main</em> neðst til vinstri og svo á <em>Push origin</em> efst í stikunni.</li>
+              <li><strong className="text-white">Sjálfvirk birting:</strong> Innan 30–45 sekúndna birtist nýi kóðinn lifandi á <code>https://test.rikisgat.is</code>!</li>
+            </ol>
           </div>
         </div>
       )}

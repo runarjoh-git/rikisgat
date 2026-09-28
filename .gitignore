@@ -4,8 +4,6 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
-!.env.example
 *.xlsx
 *.xls
 *.csv
@@ -13,5 +11,5 @@ coverage/
 *.tar.gz
 data/
 gogn/
-docs/
-.pdf
+.env*
+!.env.example
