@@ -409,6 +409,73 @@ app.post("/api/db-config", async (req, res) => {
   }
 });
 
+// 3.5 Global Portal Settings (shared across all browsers, persisted in PostgreSQL)
+let portalSettingsState = {
+  broadSearchYears: false,
+  broadSearchMonths: false
+};
+
+app.get("/api/portal-settings", async (_req, res) => {
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS stjorn_stillingar (
+          lykill VARCHAR(100) PRIMARY KEY,
+          gildi TEXT NOT NULL,
+          uppfaert TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      const dbRes = await client.query("SELECT lykill, gildi FROM stjorn_stillingar");
+      for (const row of dbRes.rows) {
+        if (row.lykill === "broadSearchYears") portalSettingsState.broadSearchYears = row.gildi === "true";
+        if (row.lykill === "broadSearchMonths") portalSettingsState.broadSearchMonths = row.gildi === "true";
+      }
+    } catch {
+      // ignore, fall back to memory
+    } finally {
+      release();
+    }
+  } catch {
+    // DB offline, fall back to memory
+  }
+  res.json(portalSettingsState);
+});
+
+app.post("/api/portal-settings", async (req, res) => {
+  const { broadSearchYears, broadSearchMonths } = req.body;
+  if (typeof broadSearchYears === "boolean") portalSettingsState.broadSearchYears = broadSearchYears;
+  if (typeof broadSearchMonths === "boolean") portalSettingsState.broadSearchMonths = broadSearchMonths;
+
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS stjorn_stillingar (
+          lykill VARCHAR(100) PRIMARY KEY,
+          gildi TEXT NOT NULL,
+          uppfaert TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        INSERT INTO stjorn_stillingar (lykill, gildi, uppfaert)
+        VALUES 
+          ('broadSearchYears', $1, NOW()),
+          ('broadSearchMonths', $2, NOW())
+        ON CONFLICT (lykill) DO UPDATE SET gildi = EXCLUDED.gildi, uppfaert = NOW()
+      `, [String(portalSettingsState.broadSearchYears), String(portalSettingsState.broadSearchMonths)]);
+    } catch {
+      // ignore
+    } finally {
+      release();
+    }
+  } catch {
+    // ignore
+  }
+
+  res.json({ success: true, settings: portalSettingsState });
+});
+
 // 4. Query Overview & Available Years from PostgreSQL
 app.get("/api/overview", async (_req, res) => {
   try {
@@ -2959,6 +3026,406 @@ app.post("/api/import-server-file", async (req, res) => {
       durationMs: Date.now() - startTime
     });
   }
+});
+
+// -------------------------------------------------------------
+// Beta Signup & Founder Access Control Endpoints
+// -------------------------------------------------------------
+const BETA_SIGNUPS_FILE = path.join(process.cwd(), "beta_signups.json");
+const FOUNDERS_FILE = path.join(process.cwd(), "founders.json");
+
+// Default initial founders backup if database is not reachable
+const DEFAULT_FOUNDERS = [
+  {
+    id: 1,
+    name: "Rúnar Jóhannesson",
+    email: "runarjoh@gmail.com",
+    role: "Aðalstofnandi",
+    access_code: "ViktorSmari2000",
+    is_active: true,
+    created_at: new Date().toISOString()
+  }
+];
+
+// Helper to ensure tables exist in PostgreSQL
+async function ensureAccessTablesExist() {
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS beta_signups (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL,
+          role VARCHAR(100),
+          note TEXT,
+          wants_notifications BOOLEAN DEFAULT true,
+          status VARCHAR(50) DEFAULT 'pending',
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        ALTER TABLE beta_signups ADD COLUMN IF NOT EXISTS wants_notifications BOOLEAN DEFAULT true;
+        ALTER TABLE beta_signups ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';
+
+        CREATE TABLE IF NOT EXISTS founders_access (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          role VARCHAR(100) DEFAULT 'Stofnandi',
+          access_code VARCHAR(255) NOT NULL,
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          last_login TIMESTAMPTZ
+        );
+
+        INSERT INTO founders_access (name, email, role, access_code)
+        VALUES ('Rúnar Jóhannesson', 'runarjoh@gmail.com', 'Aðalstofnandi', 'ViktorSmari2000')
+        ON CONFLICT (email) DO NOTHING;
+
+        DO $$ 
+        BEGIN 
+          IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'prufunotendur_skraningar') THEN
+            INSERT INTO beta_signups (name, email, role, note, wants_notifications, status, created_at)
+            SELECT nafn, netfang, COALESCE(hlutverk, 'Almennur borgari'), COALESCE(athugasemd, ''), true, 'pending', COALESCE(skrad_dags, NOW())
+            FROM prufunotendur_skraningar
+            WHERE netfang NOT IN (SELECT email FROM beta_signups);
+          END IF;
+        END $$;
+      `);
+    } finally {
+      release();
+    }
+  } catch (err: any) {
+    console.warn("[AccessControl] Could not verify DB tables, using fallback files:", err.message);
+  }
+}
+
+// Ensure tables on startup
+ensureAccessTablesExist().catch(() => {});
+
+// Rate limiting map for signups: IP -> { count: number, resetAt: number }
+const signupRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+const isSignupRateLimited = (ip: string): boolean => {
+  const now = Date.now();
+  const entry = signupRateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    signupRateLimitMap.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 }); // 10 min window
+    return false;
+  }
+  if (entry.count >= 5) {
+    return true; // max 5 submissions per 10 minutes per IP
+  }
+  entry.count++;
+  return false;
+};
+
+// Route handlers supporting both /api/beta-signup and /api/beta-signups
+const handleBetaSignupPost = async (req: any, res: any) => {
+  const { name, email, role, note, wants_notifications = true, website_url_hp, rendered_at } = req.body;
+
+  // 1. Anti-Bot: Honeypot field trap (bots fill all fields; humans don't see this)
+  if (website_url_hp && String(website_url_hp).trim().length > 0) {
+    console.warn(`[AntiBot] Honeypot trap triggered by bot (IP: ${req.ip || 'unknown'})`);
+    // Return silent success so bot doesn't retry
+    return res.json({ success: true, message: "Skráning móttekin" });
+  }
+
+  // 2. Anti-Bot: Fast-submission check (humans take at least 1.2s to fill out the form)
+  if (rendered_at && typeof rendered_at === 'number') {
+    const elapsed = Date.now() - rendered_at;
+    if (elapsed > 0 && elapsed < 1200) {
+      console.warn(`[AntiBot] Form submitted too quickly (${elapsed}ms) by bot (IP: ${req.ip || 'unknown'})`);
+      return res.json({ success: true, message: "Skráning móttekin" });
+    }
+  }
+
+  // 3. Anti-Bot: IP Rate Limiting (max 5 signups per 10 minutes)
+  const clientIp = String(req.ip || req.headers['x-forwarded-for'] || 'unknown');
+  if (isSignupRateLimited(clientIp)) {
+    return res.status(429).json({ 
+      success: false, 
+      error: "Of margar beiðnir hafa borist frá þessari IP-tölu. Vinsamlegast bíddu í smástund áður en þú reynir aftur." 
+    });
+  }
+
+  // 4. Basic validation & sanitization
+  if (!name || !email) {
+    return res.status(400).json({ success: false, error: "Nafn og netfang eru nauðsynleg" });
+  }
+
+  const cleanName = String(name).trim();
+  const cleanEmail = String(email).trim().toLowerCase();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return res.status(400).json({ success: false, error: "Ógilt snið á netfangi" });
+  }
+
+  const record = {
+    id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+    name: cleanName,
+    email: cleanEmail,
+    role: String(role || "Almennur borgari").trim(),
+    note: String(note || "").trim(),
+    wants_notifications: Boolean(wants_notifications),
+    status: "pending",
+    created_at: new Date().toISOString()
+  };
+
+  // Try saving to PostgreSQL if available
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      const ins = await client.query(`
+        INSERT INTO beta_signups (name, email, role, note, wants_notifications, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, created_at;
+      `, [record.name, record.email, record.role, record.note, record.wants_notifications, record.status]);
+      if (ins.rows && ins.rows[0]) {
+        record.id = String(ins.rows[0].id);
+        record.created_at = ins.rows[0].created_at;
+      }
+    } finally {
+      release();
+    }
+  } catch (dbErr: any) {
+    console.warn("[BetaSignup] Could not persist to DB, falling back to local file:", dbErr.message);
+  }
+
+  // Also write to local backup JSON file
+  try {
+    let list: any[] = [];
+    if (fs.existsSync(BETA_SIGNUPS_FILE)) {
+      list = JSON.parse(fs.readFileSync(BETA_SIGNUPS_FILE, "utf-8"));
+    }
+    list.push(record);
+    fs.writeFileSync(BETA_SIGNUPS_FILE, JSON.stringify(list, null, 2), "utf-8");
+  } catch (fsErr) {
+    console.error("[BetaSignup] Could not write backup file:", fsErr);
+  }
+
+  res.json({ success: true, message: "Skráning móttekin", record });
+};
+
+app.post("/api/beta-signup", handleBetaSignupPost);
+app.post("/api/beta-signups", handleBetaSignupPost);
+
+const handleBetaSignupGet = async (_req: any, res: any) => {
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      const q = await client.query(`
+        SELECT id, name, email, role, note, wants_notifications, status, created_at 
+        FROM beta_signups 
+        ORDER BY created_at DESC;
+      `);
+      return res.json({ success: true, signups: q.rows, rows: q.rows, count: q.rows.length });
+    } finally {
+      release();
+    }
+  } catch {
+    let list: any[] = [];
+    if (fs.existsSync(BETA_SIGNUPS_FILE)) {
+      try {
+        list = JSON.parse(fs.readFileSync(BETA_SIGNUPS_FILE, "utf-8"));
+      } catch {}
+    }
+    return res.json({ success: true, signups: list, rows: list, count: list.length });
+  }
+};
+
+app.get("/api/beta-signup", handleBetaSignupGet);
+app.get("/api/beta-signups", handleBetaSignupGet);
+
+app.patch("/api/beta-signup/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status, wants_notifications } = req.body;
+
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      await client.query(`
+        UPDATE beta_signups 
+        SET status = COALESCE($1, status),
+            wants_notifications = COALESCE($2, wants_notifications)
+        WHERE id = $3 OR id::text = $3;
+      `, [status || null, wants_notifications !== undefined ? wants_notifications : null, id]);
+    } finally {
+      release();
+    }
+  } catch (dbErr: any) {
+    console.warn("[BetaSignup] Update in DB failed, updating file:", dbErr.message);
+  }
+
+  try {
+    if (fs.existsSync(BETA_SIGNUPS_FILE)) {
+      const list = JSON.parse(fs.readFileSync(BETA_SIGNUPS_FILE, "utf-8"));
+      const item = list.find((s: any) => String(s.id) === String(id));
+      if (item) {
+        if (status) item.status = status;
+        if (wants_notifications !== undefined) item.wants_notifications = wants_notifications;
+        fs.writeFileSync(BETA_SIGNUPS_FILE, JSON.stringify(list, null, 2), "utf-8");
+      }
+    }
+  } catch {}
+
+  res.json({ success: true, message: "Staða uppfærð" });
+});
+
+// -------------------------------------------------------------
+// Founders Access Control Endpoints
+// -------------------------------------------------------------
+app.post("/api/founders/login", async (req, res) => {
+  const { access_code, email } = req.body;
+  const cleanCode = String(access_code || "").trim();
+  const cleanEmail = String(email || "").trim().toLowerCase();
+
+  if (!cleanCode) {
+    return res.status(400).json({ success: false, error: "Aðgangskóða vantar" });
+  }
+
+  // Master override codes for initial setup
+  if (cleanCode === "ViktorSmari2000" || cleanCode === "prufa2026") {
+    return res.json({
+      success: true,
+      founder: {
+        id: 1,
+        name: cleanEmail ? cleanEmail.split("@")[0] : "Rúnar Jóhannesson",
+        email: cleanEmail || "runarjoh@gmail.com",
+        role: "Aðalstofnandi",
+        is_active: true
+      },
+      token: "founder_" + Date.now()
+    });
+  }
+
+  // Check database
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      let query = `SELECT id, name, email, role, is_active FROM founders_access WHERE access_code = $1 AND is_active = true`;
+      let params = [cleanCode];
+      if (cleanEmail) {
+        query += ` AND LOWER(email) = $2`;
+        params.push(cleanEmail);
+      }
+      const result = await client.query(query, params);
+      if (result.rows && result.rows.length > 0) {
+        const founder = result.rows[0];
+        await client.query(`UPDATE founders_access SET last_login = NOW() WHERE id = $1`, [founder.id]);
+        return res.json({
+          success: true,
+          founder,
+          token: "founder_" + founder.id + "_" + Date.now()
+        });
+      }
+    } finally {
+      release();
+    }
+  } catch (err: any) {
+    console.warn("[FoundersLogin] Database query failed, checking file:", err.message);
+  }
+
+  // Check file backup
+  try {
+    let founders = DEFAULT_FOUNDERS;
+    if (fs.existsSync(FOUNDERS_FILE)) {
+      founders = JSON.parse(fs.readFileSync(FOUNDERS_FILE, "utf-8"));
+    }
+    const match = founders.find(f => 
+      f.access_code === cleanCode && 
+      f.is_active &&
+      (!cleanEmail || f.email.toLowerCase() === cleanEmail)
+    );
+    if (match) {
+      return res.json({
+        success: true,
+        founder: { id: match.id, name: match.name, email: match.email, role: match.role },
+        token: "founder_" + match.id + "_" + Date.now()
+      });
+    }
+  } catch {}
+
+  res.status(401).json({ success: false, error: "Ógildur aðgangskóði eða notandi finnst ekki" });
+});
+
+app.get("/api/founders/list", async (_req, res) => {
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      const q = await client.query(`
+        SELECT id, name, email, role, is_active, created_at, last_login 
+        FROM founders_access 
+        ORDER BY id ASC;
+      `);
+      return res.json({ success: true, founders: q.rows });
+    } finally {
+      release();
+    }
+  } catch {
+    let founders = DEFAULT_FOUNDERS;
+    if (fs.existsSync(FOUNDERS_FILE)) {
+      try {
+        founders = JSON.parse(fs.readFileSync(FOUNDERS_FILE, "utf-8"));
+      } catch {}
+    }
+    const safeFounders = founders.map(({ access_code, ...rest }) => rest);
+    return res.json({ success: true, founders: safeFounders });
+  }
+});
+
+app.post("/api/founders/add", async (req, res) => {
+  const { name, email, role = "Stofnandi", access_code } = req.body;
+  if (!name || !email || !access_code) {
+    return res.status(400).json({ success: false, error: "Nafn, netfang og aðgangskóði eru nauðsynleg" });
+  }
+
+  const newFounder = {
+    name: String(name).trim(),
+    email: String(email).trim().toLowerCase(),
+    role: String(role).trim(),
+    access_code: String(access_code).trim(),
+    is_active: true,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    const { client, release } = await getConnectedClient();
+    try {
+      await ensureAccessTablesExist();
+      await client.query(`
+        INSERT INTO founders_access (name, email, role, access_code, is_active)
+        VALUES ($1, $2, $3, $4, true)
+        ON CONFLICT (email) DO UPDATE 
+        SET name = EXCLUDED.name, role = EXCLUDED.role, access_code = EXCLUDED.access_code, is_active = true;
+      `, [newFounder.name, newFounder.email, newFounder.role, newFounder.access_code]);
+    } finally {
+      release();
+    }
+  } catch (err: any) {
+    console.warn("[FoundersAdd] DB insert failed, writing to file:", err.message);
+  }
+
+  try {
+    let list = DEFAULT_FOUNDERS;
+    if (fs.existsSync(FOUNDERS_FILE)) {
+      list = JSON.parse(fs.readFileSync(FOUNDERS_FILE, "utf-8"));
+    }
+    const existingIdx = list.findIndex(f => f.email.toLowerCase() === newFounder.email);
+    if (existingIdx >= 0) {
+      list[existingIdx] = { ...list[existingIdx], ...newFounder };
+    } else {
+      list.push({ id: Date.now(), ...newFounder });
+    }
+    fs.writeFileSync(FOUNDERS_FILE, JSON.stringify(list, null, 2), "utf-8");
+  } catch {}
+
+  res.json({ success: true, message: "Stofnandi skráður" });
 });
 
 // -------------------------------------------------------------

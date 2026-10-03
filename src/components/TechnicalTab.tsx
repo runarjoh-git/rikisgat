@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Database, FolderTree, Cpu, HardDrive, FileCode, CheckCircle2, 
-  ArrowRight, Table, Layers, Server, Terminal, Copy, Check, AlertCircle, ShieldCheck, Tag
+  ArrowRight, Table, Layers, Server, Terminal, Copy, Check, AlertCircle, ShieldCheck, Tag, Users
 } from 'lucide-react';
 import { DatabaseStats } from '../types';
 import { formaTolu } from '../utils/icelandicFormatters';
@@ -93,7 +93,25 @@ ORDER BY dreifing_tegunda;
 
 -- G. Kanna hvort einhverjir reikningar vísi í stofnanir eða birgja sem ekki eru til (Orphans):
 SELECT COUNT(*) AS vantar_stofnun FROM reikningar r LEFT JOIN stofnanir s ON r.stofnun_id = s.id WHERE s.id IS NULL;
-SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi_id = b.id WHERE b.id IS NULL;`;
+SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi_id = b.id WHERE b.id IS NULL;
+
+-- H. Kanna nýju aðgangstöflurnar (beta_signups og founders_access):
+SELECT 'beta_signups' AS tafla, COUNT(*) AS fjoldi_rada FROM beta_signups
+UNION ALL
+SELECT 'founders_access' AS tafla, COUNT(*) AS fjoldi_rada FROM founders_access;
+
+-- I. Skoða skráða stofnendur og stöðu (Aðgangur að Innra Stjórnborði):
+SELECT id, name, email, role, is_active, created_at, last_login 
+FROM founders_access
+ORDER BY id ASC;
+
+-- J. Greining á óskum um prufuaðgang og tilkynningar (af forsíðu rikisgat.is):
+SELECT 
+    wants_notifications,
+    status,
+    COUNT(*) AS fjoldi
+FROM beta_signups
+GROUP BY wants_notifications, status;`;
 
   const copyScriptsAll = `-- ============================================================
 -- 2. FULLKOMNAR POSTGRESQL COPY SKIPANIR FYRIR ALLAR TÖFLUR
@@ -348,7 +366,7 @@ WHERE tablename = 'reikningar';`;
             <div className="border border-neutral-300 rounded-lg overflow-hidden text-xs">
               <div className="bg-neutral-100 p-2.5 font-bold text-neutral-700 border-b border-neutral-300 flex items-center justify-between">
                 <span>🐘 Database: rikisgat (pgAdmin 4 á D:\PostgreSQL)</span>
-                <span>6 töflur samtals (Raungögn úr pgAdmin)</span>
+                <span className="text-emerald-800 font-bold font-mono">8 töflur samtals (Raungögn úr pgAdmin 4)</span>
               </div>
               
               <table className="w-full text-left border-collapse">
@@ -397,6 +415,33 @@ WHERE tablename = 'reikningar';`;
                     </td>
                     <td className="p-3 text-[11px] text-neutral-600">
                       Birgjar ríkisins (tengist <code>reikningar.birgi_id</code>)
+                    </td>
+                  </tr>
+
+                  {/* Nýjar Aðgangsstýringartöflur */}
+                  <tr className="hover:bg-neutral-50/80 bg-amber-50/20">
+                    <td className="p-3 font-mono font-bold text-amber-900 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-amber-600" /> founders_access
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-amber-800">8 dálkar</td>
+                    <td className="p-3 font-mono text-[11px] text-neutral-700">
+                      <code>id (serial PK)</code>, <code>name (varchar 255)</code>, <code>email (varchar 255 UNIQUE)</code>, <code>role (varchar 100)</code>, <code>access_code (varchar 255)</code>, <code>is_active (boolean)</code>, <code>created_at</code>, <code>last_login</code>
+                    </td>
+                    <td className="p-3 text-[11px] text-neutral-600">
+                      <strong>Lokaður aðgangur stofnenda:</strong> Stýrir aðgangi að Innra Stjórnborði (Rúnar o.fl.).
+                    </td>
+                  </tr>
+
+                  <tr className="hover:bg-neutral-50/80 bg-emerald-50/20">
+                    <td className="p-3 font-mono font-bold text-emerald-900 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-600" /> beta_signups
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-800">8 dálkar</td>
+                    <td className="p-3 font-mono text-[11px] text-neutral-700">
+                      <code>id (serial PK)</code>, <code>name (varchar 255)</code>, <code>email (varchar 255)</code>, <code>role (varchar 100)</code>, <code>note (text)</code>, <code>wants_notifications (boolean)</code>, <code>status (varchar 50)</code>, <code>created_at</code>
+                    </td>
+                    <td className="p-3 text-[11px] text-neutral-600">
+                      <strong>Prufuaðgangar & Tilkynningar:</strong> Skráningar af forsíðu rikisgat.is og tilkynningalisti.
                     </td>
                   </tr>
 
@@ -465,7 +510,20 @@ WHERE tablename = 'reikningar';`;
                                   │ yfirflokkur (VARCHAR 100, INDEX) ───▶ 12 Aðalflokkar   │
                                   └────────────────────────────────────────────────────────┘`}</pre>
 
-              <div className="text-emerald-400 font-bold pt-2 border-t border-neutral-800">2. Stjórnborðstöflur (Verkefni & Vörumerki):</div>
+              <div className="text-amber-400 font-bold pt-2 border-t border-neutral-800">2. Aðgangsstýring, Stofnendur & Tilkynningar:</div>
+              <pre>{`┌────────────────────────────────────────────────────────┐       ┌────────────────────────────────────────────────────────┐
+│                    founders_access                     │       │                      beta_signups                      │
+├────────────────────────────────────────────────────────┤       ├────────────────────────────────────────────────────────┤
+│ id (SERIAL, PK)                                        │       │ id (SERIAL, PK)                                        │
+│ name (VARCHAR 255)                                     │       │ name (VARCHAR 255)                                     │
+│ email (VARCHAR 255, UNIQUE) ───▶ Innskráning stofnanda │       │ email (VARCHAR 255) ───▶ Tilkynningar í tölvupósti     │
+│ role (VARCHAR 100 DEFAULT 'Stofnandi')                 │       │ role (VARCHAR 100) (Borgari, Blaðamaður, Stofnfélagi)  │
+│ access_code (VARCHAR 255)                              │       │ note (TEXT)                                            │
+│ is_active (BOOLEAN DEFAULT true)                       │       │ wants_notifications (BOOLEAN DEFAULT true)             │
+│ created_at (TIMESTAMPTZ), last_login (TIMESTAMPTZ)     │       │ status (VARCHAR 50) ('pending','approved','rejected')  │
+└────────────────────────────────────────────────────────┘       └────────────────────────────────────────────────────────┘`}</pre>
+
+              <div className="text-sky-400 font-bold pt-2 border-t border-neutral-800">3. Stjórnborðstöflur (Verkefni & Vörumerki):</div>
               <pre>{`┌────────────────────────────────────────────────────────┐       ┌────────────────────────────────────────────────────────┐
 │                   stjorn_verkefni                      │       │                    stjorn_vorumerki                    │
 ├────────────────────────────────────────────────────────┤       ├────────────────────────────────────────────────────────┤
@@ -493,7 +551,7 @@ WHERE tablename = 'reikningar';`;
                 Möppuskipan á Fartölvu (D:\ Drif) & PostgreSQL 18
               </h3>
               <p className="text-xs text-neutral-500">
-                Raunveruleg möppuskipan á vinnuvélinni: PostgreSQL gagnagrunnur og Node.js vefþjónn.
+                Raunveruleg möppuskipan á vinnuvélinni: PostgreSQL gagnagrunnur, Node.js vefþjónn og lendingarsíða.
               </p>
             </div>
           </div>
@@ -517,7 +575,8 @@ WHERE tablename = 'reikningar';`;
             <div className="pl-4 text-blue-400 font-bold mt-2">📁 D:\gagnagrunnur_skriftur\ <span className="text-neutral-500 text-[11px]">(SQL viðhalds- og flokkunarskriftur)</span></div>
             <div className="pl-8 text-emerald-300">📜 01_schema_rikisgat.sql <span className="text-neutral-500 text-[11px]">(Töfluskilgreiningar & Composite Indexes)</span></div>
             <div className="pl-8 text-emerald-300">📜 02_flokkun_tegunda.sql <span className="text-neutral-500 text-[11px]">(12 aðalflokkar & tegundir_flokkun tafla)</span></div>
-            <div className="pl-8 text-neutral-400">📜 03_benchmark_queries.sql <span className="text-neutral-500 text-[11px]">(Afkastaprófanir & EXPLAIN ANALYZE)</span></div>
+            <div className="pl-8 text-emerald-300">📜 03_access_and_founders.sql <span className="text-neutral-500 text-[11px]">(beta_signups & founders_access töflur)</span></div>
+            <div className="pl-8 text-neutral-400">📜 04_benchmark_queries.sql <span className="text-neutral-500 text-[11px]">(Afkastaprófanir & EXPLAIN ANALYZE)</span></div>
 
             {/* Backup directory */}
             <div className="pl-4 text-emerald-400 font-bold mt-2">📁 D:\afrit_rikisgat\ <span className="text-neutral-500 text-[11px]">(Öryggisafrit á harða diskinum án internets)</span></div>
@@ -525,17 +584,26 @@ WHERE tablename = 'reikningar';`;
             <div className="pl-8 text-neutral-400">📦 rikisgat_full_20260914.dump <span className="text-neutral-500 text-[11px]">(Nýjasta staðbundna afritið: ~900 MB þjappað)</span></div>
 
             {/* Node.js server and client */}
-            <div className="pl-4 text-amber-400 font-bold mt-2">📁 D:\minn-vefthjonn\ <span className="text-neutral-500 text-[11px]">(Vefþjónn & RíkisGát forrit)</span></div>
+            <div className="pl-4 text-amber-400 font-bold mt-2">📁 D:\minn-vefthjonn\rikisgat\ <span className="text-neutral-500 text-[11px]">(Vefþjónn & RíkisGát forrit)</span></div>
             <div className="pl-8 text-purple-400 font-bold">📁 minn-server\ <span className="text-neutral-500 text-[11px]">(Node.js & Express API)</span></div>
             <div className="pl-12 text-neutral-400">📁 node_modules\ <span className="text-neutral-500 text-[11px]">(pg, express, dotenv, cors, typescript)</span></div>
             <div className="pl-12 text-neutral-300">📄 .env <span className="text-neutral-500 text-[11px]">(DATABASE_URL=postgresql://localhost:5432/rikisgat)</span></div>
-            <div className="pl-12 text-neutral-300">⚡ server.ts <span className="text-neutral-500 text-[11px]">(Express API: /api/stats, /api/flokkar, /api/top-suppliers)</span></div>
+            <div className="pl-12 text-neutral-300">⚡ server.ts <span className="text-neutral-500 text-[11px]">(API: /api/invoices, /api/beta-signup, /api/founders/login)</span></div>
+            <div className="pl-12 text-neutral-400">📄 beta_signups.json <span className="text-neutral-500 text-[11px]">(Staðvært vara-öryggisafrit fyrir skráningar)</span></div>
+            <div className="pl-12 text-neutral-400">📄 founders.json <span className="text-neutral-500 text-[11px]">(Staðvært vara-öryggisafrit fyrir stofnendur)</span></div>
             <div className="pl-12 text-neutral-300">📦 package.json <span className="text-neutral-500 text-[11px]">(Node.js uppsetning og keyrsluskriftur)</span></div>
 
             {/* Frontend application */}
-            <div className="pl-8 text-sky-400 font-bold mt-1">📁 rikisgat-web\ <span className="text-neutral-500 text-[11px]">(React + Tailwind vefforritið)</span></div>
-            <div className="pl-12 text-neutral-300">📁 src\components\ <span className="text-neutral-500 text-[11px]">(CategoryStreamlining, DataSimulatorTab, BrandDesigner...)</span></div>
-            <div className="pl-12 text-neutral-400">📁 dist\ <span className="text-neutral-500 text-[11px]">(Tilbúnar production skrár fyrir vefþjóninn)</span></div>
+            <div className="pl-8 text-sky-400 font-bold mt-1">📁 src\ <span className="text-neutral-500 text-[11px]">(React + Tailwind vefforritið)</span></div>
+            <div className="pl-12 text-neutral-300">📁 components\ <span className="text-neutral-500 text-[11px]"></span></div>
+            <div className="pl-16 text-emerald-300">📄 LandingView.tsx <span className="text-neutral-500 text-[11px]">(Lendingarsíða með 24h niðurtalningu og dagsins staðreynd)</span></div>
+            <div className="pl-16 text-amber-300">📄 FounderLoginGate.tsx <span className="text-neutral-500 text-[11px]">(Lokað aðgangshlið fyrir stofnendur)</span></div>
+            <div className="pl-16 text-emerald-300">📄 AccessManagementSubTab.tsx <span className="text-neutral-500 text-[11px]">(Stjórnun prufuaðganga & tilkynninga)</span></div>
+            <div className="pl-16 text-neutral-300">📄 PublicPortalView.tsx <span className="text-neutral-500 text-[11px]">(Reikningagátt og síur fyrir ár/mánuð)</span></div>
+            <div className="pl-16 text-neutral-300">📄 ProjectManagerTab.tsx <span className="text-neutral-500 text-[11px]">(Verkstjórn og stjórnborðsflipar)</span></div>
+            <div className="pl-8 text-neutral-400">📁 public\ <span className="text-neutral-500 text-[11px]"></span></div>
+            <div className="pl-12 text-emerald-300">📄 landing.html <span className="text-neutral-500 text-[11px]">(Sjálfstæð HTML skrá tilbúin til hýsingar á rikisgat.is)</span></div>
+            <div className="pl-8 text-neutral-400">📁 dist\ <span className="text-neutral-500 text-[11px]">(Tilbúnar production skrár fyrir vefþjóninn)</span></div>
           </div>
         </div>
       )}

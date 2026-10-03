@@ -61,6 +61,7 @@ interface PublicPortalViewProps {
   onOpenDashboard: () => void;
   onOpenAbout?: () => void;
   onOpenStats?: () => void;
+  onOpenLanding?: () => void;
   onOpenWhistleblower?: (invoiceData?: { institution?: string; supplier?: string; invoiceNumber?: string }) => void;
   onOpenSupport?: () => void;
   onOpenPerformance?: () => void;
@@ -73,6 +74,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
   onOpenDashboard,
   onOpenAbout,
   onOpenStats,
+  onOpenLanding,
   onOpenWhistleblower,
   onOpenSupport,
   onOpenPerformance,
@@ -1964,6 +1966,15 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({
             >
               <Heart className="w-3.5 h-3.5 text-neutral-700" />
               <span>Viltu styrkja okkur?</span>
+            </button>
+          )}
+          {onOpenLanding && (
+            <button
+              onClick={onOpenLanding}
+              className="hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer"
+              title="Skoða lendingarsíðu fyrir prufuferli og stofnun Almenns félags"
+            >
+              <span>Lendingarsíða rikisgat.is</span>
             </button>
           )}
           <button

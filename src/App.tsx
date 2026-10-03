@@ -18,15 +18,19 @@ import { SupportModal } from './components/SupportModal';
 import { PerformanceDiagnosticModal } from './components/PerformanceDiagnosticModal';
 import { StateStatsView } from './components/StateStatsView';
 import { DiscussionsView } from './components/DiscussionsView';
+import { LandingView } from './components/LandingView';
+import { FounderLoginGate } from './components/FounderLoginGate';
 import { INITIAL_DB_STATS, INITIAL_ROADMAP_TASKS, INITIAL_BRANDS } from './data/mockData';
 import { TaskItem, BrandItem } from './types';
 import { formaTolu } from './utils/icelandicFormatters';
+import { fetchPortalSettings, updatePortalSettings } from './services/api';
 
 const STORAGE_KEY_TASKS = 'rikisgat_stjorn_tasks_v7';
 const STORAGE_KEY_BRANDS = 'rikisgat_stjorn_brands_v2';
 const STORAGE_KEY_BROAD_SEARCH = 'rikisgat_broad_search_enabled_v2';
 const STORAGE_KEY_BROAD_SEARCH_YEARS = 'rikisgat_broad_search_years_enabled_v1';
 const STORAGE_KEY_BROAD_SEARCH_MONTHS = 'rikisgat_broad_search_months_enabled_v1';
+const STORAGE_KEY_FOUNDER = 'rikisgat_founder_session_v2';
 
 // Greining á slóð (URL params & hash) fyrir beinar bakdyr og síður
 function parsePageFromUrl(): { page: ActivePage; openSupport: boolean; openWhistleblower: boolean } {
@@ -62,6 +66,9 @@ function parsePageFromUrl(): { page: ActivePage; openSupport: boolean; openWhist
   if (params.get('view') === 'discussions' || hash === '#discussions' || hash === '#tjatt') {
     return { page: 'discussions', openSupport, openWhistleblower };
   }
+  if (params.get('view') === 'landing' || params.has('landing') || params.has('forsida') || hash === '#landing' || hash === '#forsida') {
+    return { page: 'landing', openSupport, openWhistleblower };
+  }
 
   return { page: 'public', openSupport, openWhistleblower };
 }
@@ -80,6 +87,15 @@ export default function App() {
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(initialUrl.openSupport);
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [whistleblowerData, setWhistleblowerData] = useState<{ institution?: string; supplier?: string; invoiceNumber?: string }>({});
+
+  // Founder authentication state for Innra Stjórnborð
+  const [founderUser, setFounderUser] = useState<{ name: string; email: string; role: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_FOUNDER);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
 
   // Hlusta á back/forward takka og hash breytingar í vafra
   useEffect(() => {
@@ -121,6 +137,10 @@ export default function App() {
           url.searchParams.delete('stjornbord');
           url.searchParams.set('view', 'discussions');
           window.history.replaceState(null, '', url.pathname + url.search);
+        } else if (viewMode === 'landing') {
+          url.searchParams.delete('stjornbord');
+          url.searchParams.set('view', 'landing');
+          window.history.replaceState(null, '', url.pathname + url.search);
         } else {
           // Public / Reikningar: halda slóð hreinni
           if (url.searchParams.has('stjornbord') || url.searchParams.get('view') === 'dashboard') {
@@ -147,6 +167,7 @@ export default function App() {
   const [activeDashboardTab, setActiveDashboardTab] = useState<'report' | 'tasks' | 'marketing' | 'tech' | 'simulator'>('report');
 
   // Broad search state controlled from Innra Stjórnborð -> Verkstjórn (aðskildir takkar fyrir ár og mánuð)
+  // Sjálfgefið er slökkt (false) fyrir alla nýja vafrara og almenning
   const [broadSearchYearsEnabled, setBroadSearchYearsEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BROAD_SEARCH_YEARS);
@@ -156,7 +177,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load broadSearchYearsEnabled', e);
     }
-    return true;
+    return false;
   });
 
   const [broadSearchMonthsEnabled, setBroadSearchMonthsEnabled] = useState<boolean>(() => {
@@ -168,25 +189,47 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load broadSearchMonthsEnabled', e);
     }
-    return true;
+    return false;
   });
 
-  // Save broad search settings
+  // Sækja miðlægar stillingar frá vefþjóni (PostgreSQL) við ræsingu
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_YEARS, JSON.stringify(broadSearchYearsEnabled));
-    } catch (e) {
-      console.error('Failed to save broadSearchYearsEnabled', e);
-    }
-  }, [broadSearchYearsEnabled]);
+    let isMounted = true;
+    fetchPortalSettings().then(settings => {
+      if (isMounted && settings) {
+        setBroadSearchYearsEnabled(settings.broadSearchYears);
+        setBroadSearchMonthsEnabled(settings.broadSearchMonths);
+        try {
+          localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_YEARS, JSON.stringify(settings.broadSearchYears));
+          localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_MONTHS, JSON.stringify(settings.broadSearchMonths));
+        } catch {
+          // ignore
+        }
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
 
-  useEffect(() => {
+  // Handlerar fyrir að kveikja/slökkva sem uppfæra bæði staðvært og miðlægt á netþjóni
+  const handleToggleBroadSearchYears = (enabled: boolean) => {
+    setBroadSearchYearsEnabled(enabled);
     try {
-      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_MONTHS, JSON.stringify(broadSearchMonthsEnabled));
-    } catch (e) {
-      console.error('Failed to save broadSearchMonthsEnabled', e);
+      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_YEARS, JSON.stringify(enabled));
+    } catch {
+      // ignore
     }
-  }, [broadSearchMonthsEnabled]);
+    updatePortalSettings({ broadSearchYears: enabled });
+  };
+
+  const handleToggleBroadSearchMonths = (enabled: boolean) => {
+    setBroadSearchMonthsEnabled(enabled);
+    try {
+      localStorage.setItem(STORAGE_KEY_BROAD_SEARCH_MONTHS, JSON.stringify(enabled));
+    } catch {
+      // ignore
+    }
+    updatePortalSettings({ broadSearchMonths: enabled });
+  };
 
   // Tasks state with localStorage persistence
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
@@ -364,15 +407,21 @@ export default function App() {
               <span>{primaryBrand ? primaryBrand.nafn.toUpperCase() : 'RÍKISGÁT'}</span>
             </div>
 
-            {viewMode !== 'public' && (
+            {viewMode !== 'public' && viewMode !== 'landing' && (
               <span className="hidden md:inline-block text-[11px] font-mono text-neutral-400 border-l border-neutral-700 pl-3">
                 PostgreSQL 18 ({formaTolu(INITIAL_DB_STATS.ar_2017_2025_fjoldi + INITIAL_DB_STATS.ar_2026_fjoldi)} reikningar)
+              </span>
+            )}
+
+            {viewMode === 'landing' && (
+              <span className="hidden sm:inline-block text-[11px] font-mono text-neutral-300 border-l border-neutral-700 pl-3 uppercase">
+                Prufuferli / Lendingarsíða
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            {viewMode !== 'public' && (
+            {viewMode !== 'public' && viewMode !== 'landing' && (
               <button
                 type="button"
                 onClick={() => setIsPerformanceModalOpen(true)}
@@ -415,11 +464,17 @@ export default function App() {
             onBackToPortal={() => setViewMode('public')}
             onOpenStats={() => setViewMode('stats')}
           />
+        ) : viewMode === 'landing' ? (
+          <LandingView 
+            onOpenApp={() => setViewMode('public')}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+          />
         ) : viewMode === 'public' ? (
           <PublicPortalView 
             onOpenDashboard={() => setViewMode('dashboard')} 
             onOpenAbout={() => setViewMode('about')}
             onOpenStats={() => setViewMode('stats')}
+            onOpenLanding={() => setViewMode('landing')}
             onOpenWhistleblower={handleOpenWhistleblower}
             onOpenSupport={() => setIsSupportModalOpen(true)}
             onOpenPerformance={() => setIsPerformanceModalOpen(true)}
@@ -427,17 +482,31 @@ export default function App() {
             broadSearchMonthsEnabled={broadSearchMonthsEnabled}
             broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
           />
+        ) : !founderUser ? (
+          <FounderLoginGate 
+            onSuccess={(founder) => {
+              setFounderUser(founder);
+              try {
+                localStorage.setItem(STORAGE_KEY_FOUNDER, JSON.stringify(founder));
+              } catch {}
+            }}
+            onBackToPortal={() => setViewMode('public')}
+          />
         ) : (
           <div className="space-y-6">
             {/* Dashboard Sub-header */}
             <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-2xl font-black tracking-tight text-neutral-900 uppercase">
                     🛡️ {primaryBrand?.nafn || 'RÍKISGÁT'} — Innra Stjórnborð
                   </h1>
                   <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
                     Skýjahýsing
+                  </span>
+                  <span className="bg-neutral-900 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 font-mono shadow-2xs">
+                    <Shield className="w-3 h-3 text-amber-400" />
+                    <span>Stofnandi: {founderUser.name}</span>
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
@@ -446,6 +515,20 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFounderUser(null);
+                    try {
+                      localStorage.removeItem(STORAGE_KEY_FOUNDER);
+                    } catch {}
+                    setViewMode('public');
+                  }}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Útskrá úr stjórnborði"
+                >
+                  <span>Útskrá stofnanda</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -559,12 +642,12 @@ export default function App() {
                   onDeleteTask={handleDeleteTask}
                   broadSearchYearsEnabled={broadSearchYearsEnabled}
                   broadSearchMonthsEnabled={broadSearchMonthsEnabled}
-                  onToggleBroadSearchYears={setBroadSearchYearsEnabled}
-                  onToggleBroadSearchMonths={setBroadSearchMonthsEnabled}
+                  onToggleBroadSearchYears={handleToggleBroadSearchYears}
+                  onToggleBroadSearchMonths={handleToggleBroadSearchMonths}
                   broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
                   onToggleBroadSearch={(val) => {
-                    setBroadSearchYearsEnabled(val);
-                    setBroadSearchMonthsEnabled(val);
+                    handleToggleBroadSearchYears(val);
+                    handleToggleBroadSearchMonths(val);
                   }}
                 />
               )}
@@ -582,8 +665,8 @@ export default function App() {
                   stats={INITIAL_DB_STATS} 
                   broadSearchEnabled={broadSearchYearsEnabled || broadSearchMonthsEnabled}
                   onToggleBroadSearch={(val) => {
-                    setBroadSearchYearsEnabled(val);
-                    setBroadSearchMonthsEnabled(val);
+                    handleToggleBroadSearchYears(val);
+                    handleToggleBroadSearchMonths(val);
                   }}
                   onOpenWhistleblower={handleOpenWhistleblower}
                 />

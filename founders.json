@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "name": "Rúnar Jóhannesson",
+    "email": "runarjoh@gmail.com",
+    "role": "Aðalstofnandi",
+    "access_code": "ViktorSmari2000",
+    "is_active": true,
+    "created_at": "2026-10-02T22:11:00.264Z"
+  },
+  {
+    "id": 1790990538423,
+    "name": "Viktor Smári Rúnarsson",
+    "email": "viktor.runarsson@gmail.com",
+    "role": "Stofnandi",
+    "access_code": "234567890",
+    "is_active": true,
+    "created_at": "2026-10-03T01:22:18.343Z"
+  }
+]

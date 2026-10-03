@@ -664,6 +664,29 @@ export async function importServerFile(filePath: string, dryRun = false): Promis
   }
 }
 
+export async function fetchPortalSettings(): Promise<{ broadSearchYears: boolean; broadSearchMonths: boolean }> {
+  try {
+    const res = await fetch('/api/portal-settings');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch {
+    return { broadSearchYears: false, broadSearchMonths: false };
+  }
+}
+
+export async function updatePortalSettings(settings: { broadSearchYears?: boolean; broadSearchMonths?: boolean }): Promise<boolean> {
+  try {
+    const res = await fetch('/api/portal-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default {
   checkDbStatus,
   updateDbConfig,

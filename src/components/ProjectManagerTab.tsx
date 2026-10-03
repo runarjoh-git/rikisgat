@@ -8,6 +8,8 @@ import {
 import { TaskItem, LocalhostFileUpdate, StofnunEmailItem } from '../types';
 import { INITIAL_LOCALHOST_UPDATES, INITIAL_STOFNANIR_EMAILS } from '../data/mockData';
 import { ExcelImportSubTab } from './ExcelImportSubTab';
+import { AccessManagementSubTab } from './AccessManagementSubTab';
+import { GamificationManagementSubTab } from './GamificationManagementSubTab';
 
 const STORAGE_KEY_LOCALHOST_UPDATES = 'rikisgat_localhost_updates_v5';
 const STORAGE_KEY_STOFNANIR_EMAILS = 'rikisgat_stofnanir_emails_v1';
@@ -40,7 +42,7 @@ export const ProjectManagerTab: React.FC<ProjectManagerTabProps> = ({
   onToggleBroadSearch
 }) => {
   // Subpage navigation under Verkefnastjóri
-  const [activeSubPage, setActiveSubPage] = useState<'tasks' | 'import' | 'emails'>('tasks');
+  const [activeSubPage, setActiveSubPage] = useState<'tasks' | 'import' | 'emails' | 'access' | 'gamification'>('tasks');
 
   const [filterMilestone, setFilterMilestone] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -444,7 +446,43 @@ SELECT COUNT(*) AS vantar_birgi FROM reikningar r LEFT JOIN birgjar b ON r.birgi
           <Mail className="w-4 h-4" />
           <span>📬 Stofnanir & Tölvupóstar ({stofnanirEmails.length})</span>
         </button>
+
+        <button
+          onClick={() => setActiveSubPage('access')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+            activeSubPage === 'access'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-700 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-amber-500" />
+          <span>🛡️ Stofnendur & Prufuaðgangar</span>
+          <span className="bg-amber-100 text-amber-900 text-[10px] px-1.5 py-0.5 rounded font-bold">Lokað</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubPage('gamification')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+            activeSubPage === 'gamification'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-700 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <span>🎮 Borgaraleikir & Gagnavitund</span>
+          <span className="bg-emerald-100 text-emerald-900 text-[10px] px-1.5 py-0.5 rounded font-bold">Nýtt</span>
+        </button>
       </div>
+
+      {/* SUBPAGE: Borgaraleikir & Gagnavitund (Gamification) */}
+      {activeSubPage === 'gamification' && (
+        <GamificationManagementSubTab />
+      )}
+
+      {/* SUBPAGE 0: Stofnendur & Prufuaðgangar */}
+      {activeSubPage === 'access' && (
+        <AccessManagementSubTab />
+      )}
 
       {/* SUBPAGE 1: Gagnainnlestur & Skráaskoðun (Excel / CSV innlestur í PostgreSQL) */}
       {activeSubPage === 'import' && (
