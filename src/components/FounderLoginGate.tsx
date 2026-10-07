@@ -40,8 +40,8 @@ export const FounderLoginGate: React.FC<FounderLoginGateProps> = ({
         // Fallback check for offline/localhost
         if (cleanCode === 'ViktorSmari2000' || cleanCode === 'prufa2026') {
           onSuccess({
-            name: 'Rúnar Jóhannesson',
-            email: email.trim() || 'runarjoh@gmail.com',
+            name: email.trim() ? email.trim().split('@')[0] : 'Stofnandi RíkisGát',
+            email: email.trim() || 'stofnandi@rikisgat.is',
             role: 'Aðalstofnandi'
           });
         } else {
@@ -52,8 +52,8 @@ export const FounderLoginGate: React.FC<FounderLoginGateProps> = ({
       // Local fallback for offline mode
       if (cleanCode === 'ViktorSmari2000' || cleanCode === 'prufa2026') {
         onSuccess({
-          name: 'Rúnar Jóhannesson',
-          email: email.trim() || 'runarjoh@gmail.com',
+          name: email.trim() ? email.trim().split('@')[0] : 'Stofnandi RíkisGát',
+          email: email.trim() || 'stofnandi@rikisgat.is',
           role: 'Aðalstofnandi'
         });
       } else {
@@ -97,7 +97,7 @@ export const FounderLoginGate: React.FC<FounderLoginGateProps> = ({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="t.d. runarjoh@gmail.com"
+              placeholder="Sláðu inn netfang..."
               className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm text-neutral-900 bg-white outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900"
             />
           </div>

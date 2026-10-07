@@ -428,81 +428,79 @@ export default function App() {
       />
 
       {/* Top Global Bar */}
-      <nav className="bg-neutral-900 text-white border-b border-neutral-800 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Button (3 lines in top-left corner) */}
-            <button
-              id="open-nav-drawer-btn"
-              onClick={() => setIsDrawerOpen(true)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer -ml-1.5 focus:outline-none focus:ring-2 focus:ring-white/20"
-              aria-label="Opna valmynd (3 strik)"
-              title="Valmynd (síður, ríkið í tölum, um okkur og aðgangur)"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+      {!(viewMode === 'dashboard' && !founderUser) && (
+        <nav className="bg-neutral-900 text-white border-b border-neutral-800 sticky top-0 z-40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Hamburger Button - hidden on landing page */}
+              {viewMode !== 'landing' && (
+                <button
+                  id="open-nav-drawer-btn"
+                  onClick={() => setIsDrawerOpen(true)}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer -ml-1.5 focus:outline-none focus:ring-2 focus:ring-white/20"
+                  aria-label="Opna valmynd (3 strik)"
+                  title="Valmynd (síður, ríkið í tölum, um okkur og aðgangur)"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+              )}
 
-            {/* Brand Logo and Title */}
-            <div 
-              onClick={() => setViewMode('public')}
-              className="flex items-center gap-2 font-black tracking-tight text-base sm:text-lg cursor-pointer select-none"
-            >
-              <span className="w-7 h-7 rounded bg-white text-neutral-900 flex items-center justify-center font-black text-sm">
-                {primaryBrand ? primaryBrand.nafn.charAt(0) : 'R'}
-              </span>
-              <span>{primaryBrand ? primaryBrand.nafn.toUpperCase() : 'RÍKISGÁT'}</span>
+              {/* Brand Logo and Title */}
+              <div 
+                onClick={() => viewMode !== 'landing' && setViewMode('public')}
+                className={`flex items-center gap-2 font-black tracking-tight text-base sm:text-lg select-none ${viewMode !== 'landing' ? 'cursor-pointer' : ''}`}
+              >
+                <span className="w-7 h-7 rounded bg-white text-neutral-900 flex items-center justify-center font-black text-sm">
+                  {primaryBrand ? primaryBrand.nafn.charAt(0) : 'R'}
+                </span>
+                <span>{primaryBrand ? primaryBrand.nafn.toUpperCase() : 'RÍKISGÁT'}</span>
+              </div>
+
+              {viewMode !== 'public' && viewMode !== 'landing' && (
+                <span className="hidden md:inline-block text-[11px] font-mono text-neutral-400 border-l border-neutral-700 pl-3">
+                  PostgreSQL 18 ({formaTolu(INITIAL_DB_STATS.ar_2017_2025_fjoldi + INITIAL_DB_STATS.ar_2026_fjoldi)} reikningar)
+                </span>
+              )}
             </div>
 
-            {viewMode !== 'public' && viewMode !== 'landing' && (
-              <span className="hidden md:inline-block text-[11px] font-mono text-neutral-400 border-l border-neutral-700 pl-3">
-                PostgreSQL 18 ({formaTolu(INITIAL_DB_STATS.ar_2017_2025_fjoldi + INITIAL_DB_STATS.ar_2026_fjoldi)} reikningar)
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {viewMode !== 'public' && viewMode !== 'landing' && (
+                <button
+                  type="button"
+                  onClick={() => setIsPerformanceModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer"
+                  title="Keyra hraðapróf og greina flöskuhálsa á localhost"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Hraðapróf</span>
+                </button>
+              )}
 
-            {viewMode === 'landing' && (
-              <span className="hidden sm:inline-block text-[11px] font-mono text-neutral-300 border-l border-neutral-700 pl-3 uppercase">
-                Prufuferli / Lendingarsíða
-              </span>
-            )}
+              {viewMode === 'public' && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('landing')}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer shadow-2xs"
+                  title="Skoða kynningarsíðu / tímabundna lendingarsíðu"
+                >
+                  <Shield className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Kynningarsíða</span>
+                </button>
+              )}
+
+              {viewMode !== 'public' && viewMode !== 'landing' && (
+                <button
+                  onClick={() => setViewMode('public')}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Forsíða / Reikningar</span>
+                </button>
+              )}
+            </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {viewMode !== 'public' && viewMode !== 'landing' && (
-              <button
-                type="button"
-                onClick={() => setIsPerformanceModalOpen(true)}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer"
-                title="Keyra hraðapróf og greina flöskuhálsa á localhost"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Hraðapróf</span>
-              </button>
-            )}
-
-            {viewMode === 'public' && (
-              <button
-                type="button"
-                onClick={() => setViewMode('landing')}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer shadow-2xs"
-                title="Skoða kynningarsíðu / tímabundna lendingarsíðu"
-              >
-                <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span>Kynningarsíða</span>
-              </button>
-            )}
-
-            {viewMode !== 'public' && (
-              <button
-                onClick={() => setViewMode('public')}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Forsíða / Reikningar</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -550,7 +548,7 @@ export default function App() {
                 localStorage.setItem(STORAGE_KEY_FOUNDER, JSON.stringify(founder));
               } catch {}
             }}
-            onBackToPortal={() => setViewMode('public')}
+            onBackToPortal={() => setViewMode('landing')}
           />
         ) : (
           <div className="space-y-6">
@@ -735,7 +733,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode !== 'public' && (
+        {viewMode !== 'public' && !(viewMode === 'dashboard' && !founderUser) && (
           <footer className="mt-12 pt-6 border-t border-neutral-300 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-600">
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-neutral-800" />

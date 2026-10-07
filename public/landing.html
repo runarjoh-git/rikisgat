@@ -3,311 +3,201 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RíkisGát — Forsíða & Prufuferli</title>
-  <meta name="description" content="Gegnsæi & Eftirlit með opinberum reikingum ríkisstjórna Íslands. 18,5 milljónir reikninga frá 2017 til 2026." />
+  <title>RíkisGát — Forsíða & Upplýsingar</title>
+  <meta name="description" content="Gegnsæi & Eftirlit með opinberum reikningum ríkisins. 18,5 milljónir reikninga frá 2017 til 2026." />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-neutral-100 text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white">
 
-  <!-- Top Banner Notice -->
+  <!-- Top Announcement Bar -->
   <div class="bg-neutral-900 text-white border-b border-neutral-800 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-center flex items-center justify-center gap-2">
-    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-    <span>Vefurinn er í prufuferli — Gögn lögð fram til stofnunar Almenns félags um rekstur RíkisGát</span>
+    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+    <span>Vefurinn er í undirbúningi — Gögn lögð fram til stofnunar Almenns félags um rekstur RíkisGát</span>
   </div>
 
-  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
 
-    <!-- Header Card (Matching RíkisGát Forsíða style) -->
-    <header class="bg-white border-2 border-neutral-900 p-4 sm:p-5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
-      <div>
-        <div class="flex items-center gap-3 flex-wrap">
-          <div class="w-7 h-7 rounded bg-neutral-900 text-white flex items-center justify-center font-black text-sm">
-            R
-          </div>
-          <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-neutral-900">
-            RÍKISGÁT
-          </h1>
-          <span class="bg-neutral-100 text-neutral-800 text-[11px] font-bold px-2 py-0.5 rounded border border-neutral-300 uppercase">
-            Prufuferli / 18,5M Reikningar
-          </span>
+    <!-- Hero Announcement — Skjaldamerki RíkisGát -->
+    <section class="bg-white border-2 border-neutral-900 rounded-2xl p-6 sm:p-10 text-center space-y-6 shadow-xs">
+      <div class="max-w-md mx-auto flex flex-col items-center">
+        <img 
+          src="/rikisgat_codeArms.png" 
+          alt="Skjaldamerki RíkisGát — Landvættir Íslands í rannsóknarhlutverki" 
+          class="max-h-80 sm:max-h-96 w-auto object-contain mx-auto drop-shadow-sm"
+          onerror="if(!this.dataset.retry){this.dataset.retry='1';this.src='/skjaldamerki.png';}else{this.style.display='none';document.getElementById('coatFallback')?.classList.remove('hidden');}"
+        />
+        <div id="coatFallback" class="hidden p-6 rounded-2xl bg-neutral-50 border-2 border-neutral-900 text-center max-w-md w-full space-y-2 mt-4">
+          <div class="w-14 h-14 rounded-2xl bg-neutral-900 text-white flex items-center justify-center text-2xl mx-auto">🛡️</div>
+          <h3 class="font-black text-lg text-neutral-900 uppercase">Skjaldamerki RíkisGát</h3>
+          <p class="text-xs text-neutral-600">Landvættirnar fjórar í rannsóknar- og eftirlitshlutverki: Griðungur, Gammur, Dreki og Bergrisi.</p>
         </div>
-        <p class="text-xs text-neutral-500 font-bold uppercase tracking-wider mt-1">
-          Gegnsæi & Eftirlit með opinberum reikingum ríkisstjórna Íslands
+      </div>
+
+      <div class="space-y-3 max-w-2xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-300 bg-neutral-100 text-neutral-800 text-xs font-bold">
+          <span>🛡️ Óháð eftirlit og gagnsæi með opinberum fjármunum</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-neutral-900">
+          RÍKISGÁT
+        </h1>
+
+        <p class="text-xs sm:text-sm font-bold uppercase tracking-wider text-neutral-500 max-w-xl mx-auto">
+          Gegnsæi & Eftirlit með opinberum reikningum ríkisstjórna Íslands
+        </p>
+
+        <p class="text-sm sm:text-base text-neutral-700 leading-relaxed font-sans max-w-2xl mx-auto pt-2">
+          Ríkisgát er nýr almenningsvefur í þróun sem opnar aðgengi að öllum reikningum ríkisins frá 2017 til 2026.
+          Alls eru yfir <strong>18,5 milljónir færslna</strong> vistaðar í PostgreSQL gagnagrunni kerfisins.
+          Aðalvefurinn verður opnaður samhliða stofnun <strong>Almenns félags</strong> til að tryggja óháðan rekstur í þágu allra borgara.
         </p>
       </div>
-
-      <div class="flex items-center gap-2 flex-wrap">
-        <a 
-          href="#skraning-box" 
-          class="px-3.5 py-2 rounded-lg text-xs font-bold bg-neutral-900 hover:bg-neutral-800 text-white transition flex items-center gap-1.5 shadow-xs"
-        >
-          <span>Fá aðgang að test.rikisgat.is</span>
-          <span>&darr;</span>
-        </a>
-      </div>
-    </header>
-
-    <!-- Hero Announcement -->
-    <section class="bg-white border-2 border-neutral-900 rounded-xl p-6 sm:p-8 text-center space-y-4 shadow-xs">
-      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-300 bg-neutral-100 text-neutral-800 text-xs font-bold">
-        <span>🛡️ Óháð eftirlit og gagnsæi með opinberum fjármunum</span>
-      </div>
-
-      <h2 class="text-3xl sm:text-5xl font-black uppercase tracking-tight text-neutral-900">
-        RÍKISGÁT
-      </h2>
-
-      <p class="text-xs sm:text-sm font-bold uppercase tracking-wider text-neutral-500 max-w-xl mx-auto">
-        Gegnsæi & Eftirlit með opinberum reikingum ríkisstjórna Íslands
-      </p>
-
-      <p class="text-sm sm:text-base text-neutral-700 leading-relaxed max-w-3xl mx-auto">
-        Ríkisgát er nýr almenningsvefur í þróun sem opnar aðgengi að öllum reikningum ríkisins frá 2017 til 2026.
-        Alls eru yfir <strong>18,5 milljónir færslna</strong> vistaðar í PostgreSQL gagnagrunni kerfisins.
-        Aðalvefurinn verður opnaður samhliða stofnun <strong>Almenns félags</strong> til að tryggja óháðan rekstur í þágu almennings.
-      </p>
     </section>
 
-    <!-- Shocking Fact Card with 24h Countdown -->
-    <section class="bg-white border-2 border-neutral-900 rounded-xl p-5 sm:p-7 shadow-xs space-y-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200 pb-3">
-        <div>
-          <span class="text-[11px] font-mono font-bold uppercase tracking-wider text-neutral-500 block">
-            Dagsins Tölfræði & Gagnagreining
-          </span>
-          <h3 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-neutral-900">
-            Sjokkerandi staðreynd úr reikningum ríkisins
-          </h3>
-        </div>
-
-        <div class="bg-neutral-100 border border-neutral-300 p-2.5 rounded-xl text-right">
-          <span class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-bold block">
-            Næsta daglega staðreynd eftir:
-          </span>
-          <span id="countdownDisplay" class="text-sm sm:text-base font-black font-mono text-neutral-900">
-            -- klst : -- mín : -- sek
-          </span>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center pt-2">
-        <div class="md:col-span-2 space-y-2">
-          <span id="factCategory" class="text-xs font-bold px-2.5 py-0.5 rounded bg-neutral-100 text-neutral-900 border border-neutral-300">
-            Ráðgjafakostnaður • Ár 2017–2025
-          </span>
-          <h4 id="factHeadline" class="text-xl font-black text-neutral-900">
-            Yfir 42 milljarðar króna greiddir í sérfræði- og ráðgjafaþjónustu
-          </h4>
-          <p id="factDescription" class="text-sm text-neutral-600 leading-relaxed">
-            Ráðuneyti og ríkisstofnanir hafa keypt ytri ráðgjöf, stefnumótun og sérfræðiþjónustu fyrir tugi milljarða án þess að árangursmælingar séu alltaf opinberar.
-          </p>
-          <p id="factSource" class="text-xs text-neutral-500 font-mono">
-            Heimild: Gagnagrunnur RíkisGát (18,5M reikningar)
-          </p>
-        </div>
-
-        <div class="bg-neutral-900 text-white p-5 rounded-xl text-center space-y-1 border border-neutral-800">
-          <span id="factStatLabel" class="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">Áætlaður heildarkostnaður</span>
-          <div id="factAmount" class="text-3xl font-black font-mono">42.000.000.000 kr.</div>
-          <span class="text-[10px] font-mono text-neutral-400 block pt-1">
-            Klukkan telur niður frá 24 klst
-          </span>
-        </div>
-      </div>
-    </section>
-
-    <!-- 2 Column: Form & Login -->
-    <div id="skraning-box" class="grid grid-cols-1 md:grid-cols-12 gap-6">
-      
-      <!-- Signup Form -->
-      <section class="md:col-span-7 bg-white text-neutral-900 p-5 sm:p-7 rounded-xl border-2 border-neutral-900 shadow-xs space-y-4">
-        <h3 class="text-lg font-black uppercase text-neutral-900">
-          Óska eftir prufuaðgangi á test.rikisgat.is
+    <!-- Skjaldamerki RíkisGát — Landvættirnar -->
+    <section class="bg-white border-2 border-neutral-900 rounded-xl p-6 sm:p-8 space-y-4 shadow-xs">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">🛡️</span>
+        <h3 class="text-base sm:text-lg font-black uppercase tracking-tight text-neutral-900">
+          Skjaldamerki RíkisGát — Landvættirnar í nýju eftirlitshlutverki
         </h3>
-        <p class="text-xs text-neutral-600">
-          Viltu taka þátt í að prófa leitina og greiningartólin áður en aðalvefurinn opnar opinberlega? Skráðu þig hér:
-        </p>
+      </div>
 
-        <form id="signupForm" onsubmit="handleSignup(event)" class="space-y-3">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="text-[11px] font-black uppercase text-neutral-700 block mb-1">Fullt nafn: *</label>
-              <input type="text" id="nameInput" required placeholder="t.d. Jón Jónsson" class="w-full p-2 border border-neutral-300 rounded-lg text-sm bg-white focus:border-neutral-900 outline-none" />
-            </div>
-            <div>
-              <label class="text-[11px] font-black uppercase text-neutral-700 block mb-1">Netfang: *</label>
-              <input type="email" id="emailInput" required placeholder="nafn@dæmi.is" class="w-full p-2 border border-neutral-300 rounded-lg text-sm bg-white focus:border-neutral-900 outline-none" />
-            </div>
+      <p class="text-xs sm:text-sm text-neutral-600 leading-relaxed">
+        Í stað hefðbundins valdamerkis snýr merki RíkisGát hlutverkunum við: Hér eru hinir fornu verndarvættir Íslands settir í hlutverk rannsakenda, endurskoðenda og blaðamanna til að verja almannafé og tryggja gagnsæi gagnvart almenningi:
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+        <div class="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🐂</span>
+            <h4 class="font-black text-xs uppercase text-neutral-900">Griðungurinn</h4>
           </div>
-
-          <div>
-            <label class="text-[11px] font-black uppercase text-neutral-700 block mb-1">Hlutverk / Áhugasvið:</label>
-            <select id="roleInput" class="w-full p-2 border border-neutral-300 rounded-lg text-sm bg-white focus:border-neutral-900 outline-none">
-              <option value="Almennur borgari">Almennur borgari / Skattgreiðandi</option>
-              <option value="Fjölmiðill / Blaðamaður">Blaðamaður / Rannsóknarblaðamennska</option>
-              <option value="Þingmaður / Stjórnmál">Þingmaður / Aðstoðarmaður / Stjórnmál</option>
-              <option value="Ríkisstarfsmaður / Stjórnsýsla">Starfsmaður ríkisstofnunar</option>
-              <option value="Stofnfélagi">Áhugi á að gerast stofnfélagi í Almennu félagi</option>
-            </select>
-          </div>
-
-          <!-- Tilkynninga-valkostur -->
-          <div class="p-3 bg-neutral-50 border border-neutral-200 rounded-lg flex items-start gap-2.5">
-            <input type="checkbox" id="notifyCheckbox" checked class="w-4 h-4 mt-0.5 accent-neutral-900 rounded cursor-pointer" />
-            <label for="notifyCheckbox" class="text-xs text-neutral-800 font-semibold cursor-pointer select-none">
-              Ég óska eftir að fá tilkynningar í tölvupósti þegar breytingar eru gerðar eða ný gögn bætast við vefinn
-            </label>
-          </div>
-
-          <button type="submit" class="w-full py-3 rounded-lg text-sm font-black uppercase tracking-wider bg-neutral-900 hover:bg-neutral-800 text-white transition cursor-pointer shadow-xs">
-            Senda inn ósk um prufuaðgang
-          </button>
-        </form>
-
-        <div id="signupSuccess" class="hidden bg-neutral-50 border-2 border-neutral-900 p-4 rounded-xl text-center space-y-2">
-          <p class="font-black text-neutral-900">Takk fyrir skráninguna!</p>
-          <p class="text-xs text-neutral-600">Þú færð sendan aðgangskóða og tilkynningu um leið og næsta prufuholll fer af stað.</p>
-        </div>
-      </section>
-
-      <!-- Login & Almennt Félag -->
-      <div class="md:col-span-5 space-y-6">
-        
-        <div class="bg-white p-5 sm:p-6 rounded-xl border-2 border-neutral-900 shadow-xs space-y-3">
-          <h3 class="text-base font-black uppercase text-neutral-900">Aðgangur að test.rikisgat.is</h3>
-          <p class="text-xs text-neutral-600">Prufunotendur með virkan aðgangskóða geta farið beint inn á prufuvefinn:</p>
-          <a href="https://test.rikisgat.is" class="block text-center py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition shadow-xs">
-            Fara á test.rikisgat.is &rarr;
-          </a>
-        </div>
-
-        <div class="bg-white p-5 sm:p-6 rounded-xl border border-neutral-300 shadow-xs space-y-2">
-          <h3 class="text-sm font-black uppercase text-neutral-900">Stofnun Almenns félags</h3>
-          <p class="text-xs text-neutral-600 leading-relaxed">
-            RíkisGát verður rekið af almennu félagi (óhagnýtt almannaheillafélag samkvæmt lögum nr. 110/2021) til að tryggja almenningi ókeypis og óheftan aðgang að opinberum reikningum.
+          <p class="text-[11px] text-neutral-500 font-bold uppercase">Vesturland & Vestfirðir</p>
+          <p class="text-xs text-neutral-700 leading-relaxed">
+            Rannsóknarlögreglumaðurinn með stækkunarglerið og rannsóknargögnin sem rýnir í smáa letrið og kafar ofan í bókhaldsfærslur.
           </p>
         </div>
 
-      </div>
-    </div>
+        <div class="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🦅</span>
+            <h4 class="font-black text-xs uppercase text-neutral-900">Gammurinn</h4>
+          </div>
+          <p class="text-[11px] text-neutral-500 font-bold uppercase">Norðurland</p>
+          <p class="text-xs text-neutral-700 leading-relaxed">
+            Rannsóknarblaðamaðurinn með fréttamannshattinn, myndavélina og minnisbókina sem skráir staðreyndir og upplýsir almenning.
+          </p>
+        </div>
 
-    <!-- 3 Pillars -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-      <div class="bg-white p-5 rounded-xl border border-neutral-300 shadow-xs space-y-2">
-        <div class="w-7 h-7 rounded bg-neutral-900 text-white flex items-center justify-center font-black text-sm">1</div>
-        <h4 class="font-bold text-sm text-neutral-900 uppercase">18,5 Milljónir Reikninga</h4>
-        <p class="text-xs text-neutral-600">Allir reikningar ráðuneyta og stofnana frá 2017 til 2026 í PostgreSQL gagnagrunni.</p>
+        <div class="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🐉</span>
+            <h4 class="font-black text-xs uppercase text-neutral-900">Drekinn</h4>
+          </div>
+          <p class="text-[11px] text-neutral-500 font-bold uppercase">Austurland</p>
+          <p class="text-xs text-neutral-700 leading-relaxed">
+            Eftirlitsaðilinn í frakkanum með sönnunargagnamöppuna („Evidence File“) sem gætir þess að engum frumgögnum sé leynt.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-neutral-200 bg-neutral-50/60 space-y-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🗿</span>
+            <h4 class="font-black text-xs uppercase text-neutral-900">Bergrisinn</h4>
+          </div>
+          <p class="text-[11px] text-neutral-500 font-bold uppercase">Suðurland</p>
+          <p class="text-xs text-neutral-700 leading-relaxed">
+            Yfirbókarinn og endurskoðandinn með gleraugun, fjaðurstafinn, talnagrindina, reiknivélarnar og bækurnar sem tryggir að hver einasta króna stemmi.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Um verkefnið og tilgang þess: HVERT FARA SKATTPENINGARNIR OKKAR? -->
+    <section class="bg-white border-2 border-neutral-900 rounded-xl p-6 sm:p-8 space-y-5 shadow-xs">
+      <div>
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-neutral-300 bg-neutral-100 text-neutral-800 text-[11px] font-bold tracking-wider uppercase">
+          <span>ⓘ UM VERKEFNIÐ OG TILGANG ÞESS</span>
+        </div>
       </div>
 
-      <div class="bg-white p-5 rounded-xl border border-neutral-300 shadow-xs space-y-2">
-        <div class="w-7 h-7 rounded bg-neutral-900 text-white flex items-center justify-center font-black text-sm">2</div>
-        <h4 class="font-bold text-sm text-neutral-900 uppercase">Sjálfvirkt Eftirlit</h4>
-        <p class="text-xs text-neutral-600">Sjálfvirk greining á stærstu birgjum, óvenjulegum hækkunum og ráðgjafagreiðslum.</p>
-      </div>
+      <h3 class="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-neutral-900">
+        HVERT FARA SKATTPENINGARNIR OKKAR?
+      </h3>
 
-      <div class="bg-white p-5 rounded-xl border border-neutral-300 shadow-xs space-y-2">
-        <div class="w-7 h-7 rounded bg-neutral-900 text-white flex items-center justify-center font-black text-sm">3</div>
-        <h4 class="font-bold text-sm text-neutral-900 uppercase">Óháð Almannaheill</h4>
-        <p class="text-xs text-neutral-600">Engar auglýsingar, engin pólitísk afskipti. Opið öllum borgurum án endurgjalds.</p>
+      <p class="text-sm sm:text-base text-neutral-700 leading-relaxed font-sans max-w-4xl">
+        <strong>Ríkisgát</strong> er óháð, opið borgaraverkefni hannað til að veita almenningi, blaðamönnum, fræðafólki og kjósendum einfalt, aðgengilegt og leifturhraðvirkt yfirlit yfir öll opinber útgjöld og greidda reikninga íslenska ríkisins.
+      </p>
+
+      <div class="pt-4 border-t border-neutral-200 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="flex items-start gap-3">
+          <div class="w-7 h-7 rounded bg-neutral-100 border border-neutral-300 text-neutral-900 font-black flex items-center justify-center text-xs shrink-0 mt-0.5">
+            1
+          </div>
+          <div class="space-y-0.5">
+            <h4 class="font-black text-xs uppercase tracking-wide text-neutral-900">
+              GEGNSÆI
+            </h4>
+            <p class="text-xs text-neutral-600 leading-relaxed">
+              Opinber gögn eiga að vera aðgengileg öllum án hindrana eða tæknilegra tálma.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3">
+          <div class="w-7 h-7 rounded bg-neutral-100 border border-neutral-300 text-neutral-900 font-black flex items-center justify-center text-xs shrink-0 mt-0.5">
+            2
+          </div>
+          <div class="space-y-0.5">
+            <h4 class="font-black text-xs uppercase tracking-wide text-neutral-900">
+              AÐHALD
+            </h4>
+            <p class="text-xs text-neutral-600 leading-relaxed">
+              Borgaralegt eftirlit styrkir lýðræðislega stjórnsýslu og vandaða meðferð almannafjár.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3">
+          <div class="w-7 h-7 rounded bg-neutral-100 border border-neutral-300 text-neutral-900 font-black flex items-center justify-center text-xs shrink-0 mt-0.5">
+            3
+          </div>
+          <div class="space-y-0.5">
+            <h4 class="font-black text-xs uppercase tracking-wide text-neutral-900">
+              RÉTTUR TIL GAGNA
+            </h4>
+            <p class="text-xs text-neutral-600 leading-relaxed">
+              Upplýsingalög 140/2012 tryggja rétt allra borgara til aðgangs að fylgiskjölum og frumgögnum.
+            </p>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <!-- Stofnun Almenns félags & Hugmyndafræði -->
+    <section class="bg-white border-2 border-neutral-900 rounded-xl p-6 sm:p-7 shadow-xs space-y-3">
+      <h3 class="text-base font-black uppercase text-neutral-900">Stofnun Almenns félags</h3>
+      <p class="text-xs sm:text-sm text-neutral-600 leading-relaxed">
+        RíkisGát verður rekið af <strong>almennu félagi</strong> (óhagnýtt almannaheillafélag samkvæmt lögum nr. 110/2021) til að tryggja almenningi ókeypis og óheftan aðgang að opinberum reikningum óháð stjórnmálaflokkum eða hagsmunaöflum.
+      </p>
+      <div class="pt-2">
+        <span class="text-[11px] font-mono font-bold text-neutral-800 bg-neutral-100 px-2.5 py-1 rounded border border-neutral-300 inline-block">
+          Lög nr. 140/2012 um upplýsingarétt
+        </span>
+      </div>
+    </section>
 
     <!-- Footer -->
-    <footer class="text-center text-xs text-neutral-500 py-6 border-t border-neutral-300">
-      &copy; 2026 RÍKISGÁT — Félag um gagnsæi og eftirlit með opinberum reikningum.
+    <footer class="text-center text-xs text-neutral-500 py-6 border-t border-neutral-300 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div>
+        &copy; 2026 RÍKISGÁT — Félag um gagnsæi og eftirlit með opinberum reikningum.
+      </div>
+      <div class="flex items-center gap-4">
+        <a href="?stjornbord=1" class="text-neutral-500 hover:text-neutral-900 underline font-semibold">Innra stjórnborð</a>
+      </div>
     </footer>
-
   </div>
-
-  <script>
-    const facts = [
-      {
-        category: 'Ráðgjafakostnaður • Ár 2017–2025',
-        headline: 'Yfir 42 milljarðar króna greiddir í ytri sérfræði- og ráðgjafaþjónustu',
-        description: 'Ráðuneyti og ríkisstofnanir hafa keypt ytri stefnumótun, lögfræðiálit, markaðssetningu og sérfræðiþjónustu fyrir tugi milljarða króna án þess að árangursmælingar séu alltaf opinberar.',
-        amount: '42.000.000.000 kr.',
-        statLabel: 'Áætlaður heildarkostnaður',
-        source: 'Heimild: Gagnagrunnur RíkisGát (18,5M reikningar)'
-      },
-      {
-        category: 'Hæsti einstaki reikningur • Sérhæfð lyfjainnkaup',
-        headline: 'Einstakur reikningur upp á 1,24 milljarða króna',
-        description: 'Hæstu stöku færslurnar í gagnagrunninum tengjast sérhæfðum innkaupum á hátæknilyfjum og lækningatækjum fyrir Landspítala og Sjúkratryggingar Íslands.',
-        amount: '1.240.000.000 kr.',
-        statLabel: 'Einstök greiðsla',
-        source: 'Heimild: Ríkisreikningur / Sjúkratryggingar'
-      },
-      {
-        category: 'Risna & Fundakostnaður • 380.000+ reikningar',
-        headline: '3,8 milljarðar í kaffi, risnu og fundarveitingar',
-        description: 'Yfir 380 þúsund stakir reikningar eru skráðir undir liðnum kaffistofa, mötuneyti, risna og fundarhöld hjá stofnunum ríkisins síðan árið 2017.',
-        amount: '3.800.000.000 kr.',
-        statLabel: 'Samtals skráð risna & kaffi',
-        source: 'Heimild: Bókhaldslyklar ríkisstofnana'
-      },
-      {
-        category: 'Daglegur rekstur • Virka daga',
-        headline: 'Að meðaltali 6.200 reikningar afgreiddir á hverjum virkum degi',
-        description: 'Ríkissjóður er stærsti kaupandi landsins. Á hverjum einasta virkum degi berast þúsundir reikninga frá yfir 15.000 virkum birgjum um allt land.',
-        amount: '6.200 reikningar',
-        statLabel: 'Meðalfjöldi á dag',
-        source: 'Heimild: Fjársýsla ríkisins'
-      },
-      {
-        category: 'Upplýsingatækni • Hugbúnaðarleyfi & Kerfi',
-        headline: 'Fimm stærstu tæknifyrirtækin fá yfir 15 milljarða á ári',
-        description: 'Greiðslur fyrir hugbúnaðarleyfi, skýjalausnir og tölvukerfisrekstur til stærstu upplýsingatæknifyrirtækja landsins aukast um tugi prósenta á milli ára.',
-        amount: '15.000.000.000+ kr./ár',
-        statLabel: 'Árleg UT innkaup',
-        source: 'Heimild: Greining á birgjalista RíkisGát'
-      }
-    ];
-
-    const currentDay = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-    const currentIdx = Math.abs(currentDay) % facts.length;
-    const f = facts[currentIdx];
-    document.getElementById('factCategory').innerText = f.category;
-    document.getElementById('factHeadline').innerText = f.headline;
-    document.getElementById('factDescription').innerText = f.description;
-    document.getElementById('factAmount').innerText = f.amount;
-    document.getElementById('factStatLabel').innerText = f.statLabel;
-    document.getElementById('factSource').innerText = f.source;
-
-    function updateCountdown() {
-      const now = new Date();
-      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-      const diffMs = nextMidnight.getTime() - now.getTime();
-      const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-
-      const pad = (n) => String(n).padStart(2, '0');
-      const el = document.getElementById('countdownDisplay');
-      if (el) {
-        el.innerText = pad(hours) + ' klst : ' + pad(minutes) + ' mín : ' + pad(seconds) + ' sek';
-      }
-    }
-    setInterval(updateCountdown, 1000);
-    updateCountdown();
-
-    function handleSignup(e) {
-      e.preventDefault();
-      const name = document.getElementById('nameInput').value;
-      const email = document.getElementById('emailInput').value;
-      const role = document.getElementById('roleInput').value;
-      const wants_notifications = document.getElementById('notifyCheckbox').checked;
-
-      fetch('/api/beta-signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, role, wants_notifications })
-      }).catch(() => {});
-
-      document.getElementById('signupForm').classList.add('hidden');
-      document.getElementById('signupSuccess').classList.remove('hidden');
-    }
-  </script>
 </body>
 </html>
