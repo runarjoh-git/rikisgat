@@ -23,7 +23,28 @@ import { FounderLoginGate } from './components/FounderLoginGate';
 import { INITIAL_DB_STATS, INITIAL_ROADMAP_TASKS, INITIAL_BRANDS } from './data/mockData';
 import { TaskItem, BrandItem } from './types';
 import { formaTolu } from './utils/icelandicFormatters';
-import { fetchPortalSettings, updatePortalSettings } from './services/api';
+import * as apiService from './services/api';
+
+const fetchPortalSettings = (apiService as any).fetchPortalSettings || (async () => {
+  try {
+    const res = await fetch('/api/portal-settings');
+    if (res.ok) return await res.json();
+  } catch {}
+  return { broadSearchYears: false, broadSearchMonths: false };
+});
+
+const updatePortalSettings = (apiService as any).updatePortalSettings || (async (settings: any) => {
+  try {
+    const res = await fetch('/api/portal-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+});
 
 const STORAGE_KEY_TASKS = 'rikisgat_stjorn_tasks_v7';
 const STORAGE_KEY_BRANDS = 'rikisgat_stjorn_brands_v2';
@@ -70,7 +91,19 @@ function parsePageFromUrl(): { page: ActivePage; openSupport: boolean; openWhist
     return { page: 'landing', openSupport, openWhistleblower };
   }
 
-  return { page: 'public', openSupport, openWhistleblower };
+  // Ef farið er sérstaklega inn á leitarvél / reikninga (?app, ?reikningar, ?search, ?portal, ?view=public)
+  if (params.has('app') || params.has('reikningar') || params.has('search') || params.has('portal') || params.get('view') === 'public') {
+    return { page: 'public', openSupport, openWhistleblower };
+  }
+
+  // Ef vefurinn er opnaður á test.rikisgat.is þá fer notandinn beint inn á leitar- og prufukerfið:
+  const hostname = window.location.hostname.toLowerCase();
+  if (hostname.startsWith('test.') || hostname.includes('test.rikisgat.is')) {
+    return { page: 'public', openSupport, openWhistleblower };
+  }
+
+  // Sjálfgefið: Tímabundin forsíða/lendingarsíða með nýja skjaldarmerkinu og upplýsingum um verkefnið:
+  return { page: 'landing', openSupport, openWhistleblower };
 }
 
 export default function App() {
@@ -138,16 +171,29 @@ export default function App() {
           url.searchParams.set('view', 'discussions');
           window.history.replaceState(null, '', url.pathname + url.search);
         } else if (viewMode === 'landing') {
+          // Á kynningarsíðu: halda slóð hreinni á aðalléni og localhost (hreinsa burt ?app, ?stjornbord)
           url.searchParams.delete('stjornbord');
-          url.searchParams.set('view', 'landing');
-          window.history.replaceState(null, '', url.pathname + url.search);
+          url.searchParams.delete('dashboard');
+          url.searchParams.delete('bakdyr');
+          url.searchParams.delete('app');
+          url.searchParams.delete('reikningar');
+          url.searchParams.delete('view');
+          const clean = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '');
+          window.history.replaceState(null, '', clean);
         } else {
-          // Public / Reikningar: halda slóð hreinni
-          if (url.searchParams.has('stjornbord') || url.searchParams.get('view') === 'dashboard') {
-            url.searchParams.delete('stjornbord');
-            url.searchParams.delete('dashboard');
-            url.searchParams.delete('bakdyr');
-            url.searchParams.delete('view');
+          // Public / Reikningar
+          const hostname = window.location.hostname.toLowerCase();
+          url.searchParams.delete('stjornbord');
+          url.searchParams.delete('dashboard');
+          url.searchParams.delete('bakdyr');
+          url.searchParams.delete('view');
+          // Ef við erum EKKI á test.rikisgat.is (t.d. á localhost eða www.rikisgat.is),
+          // setjum við ?app=1 í slóðina svo refresh haldi notanda á leitarvefnum:
+          if (!hostname.startsWith('test.')) {
+            url.searchParams.set('app', '1');
+            window.history.replaceState(null, '', url.pathname + url.search);
+          } else {
+            url.searchParams.delete('app');
             const clean = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '');
             window.history.replaceState(null, '', clean);
           }
@@ -433,6 +479,18 @@ export default function App() {
               </button>
             )}
 
+            {viewMode === 'public' && (
+              <button
+                type="button"
+                onClick={() => setViewMode('landing')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-neutral-700 cursor-pointer shadow-2xs"
+                title="Skoða kynningarsíðu / tímabundna lendingarsíðu"
+              >
+                <Shield className="w-3.5 h-3.5 text-amber-400" />
+                <span>Kynningarsíða</span>
+              </button>
+            )}
+
             {viewMode !== 'public' && (
               <button
                 onClick={() => setViewMode('public')}
@@ -468,6 +526,8 @@ export default function App() {
           <LandingView 
             onOpenApp={() => setViewMode('public')}
             onOpenLogin={() => setIsLoginModalOpen(true)}
+            onOpenWhistleblower={handleOpenWhistleblower}
+            onOpenSupport={() => setIsSupportModalOpen(true)}
           />
         ) : viewMode === 'public' ? (
           <PublicPortalView 
@@ -683,41 +743,61 @@ export default function App() {
               <span className="text-neutral-400">|</span>
               <span>Sjálfstætt borgaralegt eftirlit með opinberum útgjöldum Íslands</span>
             </div>
-            <div className="flex items-center gap-4 sm:gap-6 flex-wrap font-bold text-neutral-700">
-              <button
-                onClick={() => setViewMode('public')}
-                className="hover:text-neutral-900 hover:underline cursor-pointer"
-              >
-                Forsíða / Reikningar
-              </button>
-              <button
-                onClick={() => setViewMode('stats')}
-                className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'stats' ? 'text-neutral-900 underline' : ''}`}
-              >
-                <Landmark className="w-3.5 h-3.5 text-neutral-700" />
-                <span>Ríkið í tölum</span>
-              </button>
-              <button
-                onClick={() => setViewMode('about')}
-                className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'about' ? 'text-neutral-900 underline' : ''}`}
-              >
-                <Info className="w-3.5 h-3.5 text-neutral-700" />
-                <span>Um Ríkisgát</span>
-              </button>
-              <button
-                onClick={() => setIsSupportModalOpen(true)}
-                className="hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer"
-              >
-                <Heart className="w-3.5 h-3.5 text-neutral-700" />
-                <span>Viltu styrkja okkur?</span>
-              </button>
-              <button
-                onClick={() => setViewMode('dashboard')}
-                className={`text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer ${viewMode === 'dashboard' ? 'text-neutral-900 underline' : ''}`}
-              >
-                Innra Stjórnborð
-              </button>
-            </div>
+            {viewMode === 'landing' ? (
+              <div className="flex items-center gap-6 font-bold text-neutral-700">
+                <button
+                  type="button"
+                  onClick={() => setIsSupportModalOpen(true)}
+                  className="hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Heart className="w-3.5 h-3.5 text-neutral-700" />
+                  <span>Viltu styrkja okkur?</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('dashboard')}
+                  className="text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+                >
+                  Innra Stjórnborð
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-4 sm:gap-6 flex-wrap font-bold text-neutral-700">
+                <button
+                  onClick={() => setViewMode('public')}
+                  className="hover:text-neutral-900 hover:underline cursor-pointer"
+                >
+                  Forsíða / Reikningar
+                </button>
+                <button
+                  onClick={() => setViewMode('stats')}
+                  className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'stats' ? 'text-neutral-900 underline' : ''}`}
+                >
+                  <Landmark className="w-3.5 h-3.5 text-neutral-700" />
+                  <span>Ríkið í tölum</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('about')}
+                  className={`hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer ${viewMode === 'about' ? 'text-neutral-900 underline' : ''}`}
+                >
+                  <Info className="w-3.5 h-3.5 text-neutral-700" />
+                  <span>Um Ríkisgát</span>
+                </button>
+                <button
+                  onClick={() => setIsSupportModalOpen(true)}
+                  className="hover:text-neutral-900 hover:underline flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Heart className="w-3.5 h-3.5 text-neutral-700" />
+                  <span>Viltu styrkja okkur?</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('dashboard')}
+                  className={`text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer ${viewMode === 'dashboard' ? 'text-neutral-900 underline' : ''}`}
+                >
+                  Innra Stjórnborð
+                </button>
+              </div>
+            )}
           </footer>
         )}
       </main>

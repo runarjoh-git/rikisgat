@@ -2,10 +2,10 @@ import React from 'react';
 import { 
   Menu, X, Home, BarChart3, Info, MessageSquare, LogIn, Shield, 
   ExternalLink, ChevronRight, Database, CheckCircle2, Landmark, Sparkles,
-  ShieldAlert, Heart
+  ShieldAlert, Heart, Globe
 } from 'lucide-react';
 
-export type ActivePage = 'public' | 'stats' | 'about' | 'discussions' | 'dashboard';
+export type ActivePage = 'public' | 'stats' | 'about' | 'discussions' | 'dashboard' | 'landing';
 
 interface NavigationDrawerProps {
   isOpen: boolean;
@@ -74,6 +74,12 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       title: 'Um verkefnið',
       subtitle: 'Markmið, lögmæti, gagnsæi og opinn aðgangur',
       icon: Info,
+    },
+    {
+      id: 'landing' as ActivePage,
+      title: 'Forsíða rikisgat.is',
+      subtitle: 'Kynning á verkefninu, skjaldamerki og stofnun Almenns félags',
+      icon: Globe,
     }
   ];
 
