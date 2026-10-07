@@ -383,6 +383,41 @@ export const AboutView: React.FC<AboutViewProps> = ({ onBackToPortal, onOpenDash
           </div>
         </div>
 
+        {/* Heiðursfélagar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div className="bg-rose-950/30 border border-rose-800/50 p-3.5 rounded-xl space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] text-rose-300 font-bold flex items-center gap-1.5">
+                <span>👶</span>
+                <span>Heiðursfélagi nr. 1</span>
+              </div>
+              <span className="text-[9px] bg-rose-900/60 text-rose-200 px-2 py-0.5 rounded-full font-medium">
+                Skírður 20.09.2026
+              </span>
+            </div>
+            <div className="font-bold text-white text-xs">Maron Hlynur Viktorsson</div>
+            <p className="text-[11px] text-neutral-300 leading-relaxed">
+              Maron Hlynur Viktorsson, fyrsta afabarn stofnanda. Ævilangur heiðursfélagi án atkvæðisréttar sem táknmynd um að gagnsæi í dag er fyrir komandi kynslóðir.
+            </p>
+          </div>
+
+          <div className="bg-amber-950/30 border border-amber-800/50 p-3.5 rounded-xl space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] text-amber-300 font-bold flex items-center gap-1.5">
+                <span>🏅</span>
+                <span>Heiðursfélagi nr. 2</span>
+              </div>
+              <span className="text-[9px] bg-amber-900/60 text-amber-200 px-2 py-0.5 rounded-full font-medium">
+                1. aðalfundur
+              </span>
+            </div>
+            <div className="font-bold text-white text-xs">Sigþrúður Guðnadóttir</div>
+            <p className="text-[11px] text-neutral-300 leading-relaxed">
+              Kjörin á 1. aðalfundi félagsins fyrir ómetanlegan stuðning, tryggð og hvatningu við stofnun Ríkisgát.
+            </p>
+          </div>
+        </div>
+
         {/* Bank transfer box (Reserved status) */}
         <div className="bg-neutral-950/60 border border-neutral-800 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="space-y-0.5">

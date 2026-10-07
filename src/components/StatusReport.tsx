@@ -43,20 +43,24 @@ Gagnagrunnurinn inniheldur nú **${formaTolu(stats.ar_2017_2025_fjoldi + stats.a
 
 ---
 
-## 2. Gagnagrunnur v3.0 & Relational Architecture (8–10 Tengdar Töflur)
+## 2. Gagnagrunnur v3.0 & Relational Architecture (8–10 Samstilltar Töflur)
 Í eldri útgáfu (v1.0 og v2.0) var notuð ein flöt tafla þar sem nöfn stofnana og birgja voru margendurtekin yfir 18 milljón sinnum. Það leiddi til mikillar disknýtingar (>16 GiB) og hægra fyrirspurna.
 
-Í núverandi útgáfu er gagnagrunnurinn staðlaður (Normalized 3NF) í **8–10 samstilltar töflur**:
-1. \`stofnanir\` (172 raðir, 16 KiB — ID og nöfn allra ríkisstofnana)
-2. \`birgjar\` (19.303 raðir, 1.8 MiB — ID, heiti og kennitölur birgja)
-3. \`reikningar\` (18.167.314 raðir, ~4,2 GiB — aðalfærslutaflan með flýtivísum)
+Í núverandi hönnun er töflum skipt í tvo meginaflokka: **Virkar raungagnatöflur í PostgreSQL** og **Framtíðaráætlanir (tómar í grunni eins og er)**:
+
+### A. Virkar Raungagnatöflur í PostgreSQL (100% Tengt & Virkt):
+1. \`reikningar\` (18.167.314 raðir, ~4,2 GiB — aðalfærslutaflan með composite flýtivísum)
+2. \`stofnanir\` (172 raðir, 16 KiB — opinber nöfn og ID allra stofnana)
+3. \`birgjar\` (19.303 raðir, 1.8 MiB — ID, heiti og kennitölur birgja)
 4. \`tegundir_flokkun\` (607 tegundir varpaðar í 12 yfirflokka, 64 KiB)
-5. \`stjorn_verkefni\` (18 verkefnaraðir í stjórnborði og vegvísi)
-6. \`stjorn_vorumerki\` (5 vörumerki og lénaskráningar)
-7. \`beta_signups\` (Óskir um prufuaðgang af forsíðu, netföng, tilkynningaóskir og samþykktarferli)
-8. \`founders_access\` (Lokaður aðgangur stofnenda félagsins, lykilorðavörn, hlutverk og innskráningarsaga)
-9. \`stofnanir_emails\` (Opinber netföng stofnana og ráðuneyta fyrir lögboðnar upplýsingabeiðnir skv. lögum 140/2012)
-10. \`portal_settings\` (Miðlægar stillingar, m.a. víðtæk ára- og mánaðaleit)
+5. \`founders_access\` (Lokaður aðgangur stofnenda félagsins, lykilorðavörn og réttindi að Innra Stjórnborði)
+6. \`beta_signups\` (Óskir um prufuaðgang af forsíðu, netföng, tilkynningaóskir og samþykktarferli)
+
+### B. Framtíðaráætlanir & Gagnaöflun (Tómar í PostgreSQL eins og er):
+7. \`stofnanir_emails\` *(Framtíðaráætlun / Tómt í grunni)*: Opinber netföng stofnana fyrir lögboðnar upplýsingabeiðnir skv. lögum 140/2012. Gagnaöflun og skoðanakönnun stendur yfir; vefurinn styður innbyggðan lista tímabundið.
+8. \`stjorn_verkefni\` *(Framtíðaráætlun / Tómt í grunni)*: Vegvísir og verkefnalisti stjórnborðs. Keyrir eins og er í staðværu minni (localStorage/viðmóti), verður fært í miðlægan PostgreSQL grunn í framtíðinni.
+9. \`stjorn_vorumerki\` *(Framtíðaráætlun / Tómt í grunni)*: Vörumerkjasafn og lénaskráningar. Geymt í viðmóti eins og er, tengt í grunn við stækkun félagsins.
+10. \`portal_settings\` *(Framtíðaráætlun)*: Miðlægar stillingar fyrir vefgáttina.
 
 ### Afkastafínstilling (Indexing Strategy)
 Til að tryggja að síur og topplistar vinni án Full Table Scan voru smíðaðir samsettir flýtivísar (Composite Indexes):
@@ -112,7 +116,7 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
 ## 7. Félagsstofnun & Stjórnarhættir (Krakkakynning & 1. Aðalfundur)
 - **Félagsform:** Almennt félag rekið án hagnaðarmarkmiðs (félagasamtök skráð hjá Skattinum).
 - **Stofnendur & Stjórn:** Feðginin Rúnar Þór Jóhannsson (formaður), Viktor Smári Rúnarsson (fundarstjóri & tæknistjóri), Rakel Anna Rúnarsdóttir (ritari & samskiptastjóri) og Óðinn Rúnarsson (gagnarýnir & gjaldkeri).
-- **Heiðursfélagi nr. 1:** Fyrsta afabarnið (skírt 20. september 2026) — sem áminning um framtíðina.
+- **Heiðursfélagi nr. 1:** **Maron Hlynur Viktorsson** (fæddur 25. ágúst 2026, skírður 20. september 2026) — Fyrsta afabarnið, ævilangur heiðursfélagi sem táknmynd um að gagnsæi í dag er fyrir komandi kynslóðir.
 - **Heiðursfélagi nr. 2:** **Sigþrúður Guðnadóttir** — samþykkt á 1. aðalfundi fyrir ómetanlegan stuðning, samfylgd og hvatningu.
 - **Faglegur bakhjarl:** Dílajörð ehf. veitir sérfræðiráðgjöf og tryggir vettvang fyrir launaða námsreynslu unga fólksins.
 
@@ -122,8 +126,8 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
 1. **Undirritun stofnskjala & 1. Aðalfundur:** Kynna verkefnið fyrir krökkunum, lesa stofnskjöl og fá undirskriftir allra stofnenda.
 2. **Skráning hjá Skattinum:** Skila RSK 17.20 (umsókn um kennitölu almenns félags) ásamt samþykktum og stofnfundargerð.
 3. **Stofnun bankareiknings:** Opna frjálsan söfnunarreikning á nýrri kennitölu félagsins fyrir „Viltu styrkja okkur“.
-4. **Hetzner Cloud & Coolify:** Ræsa CAX21 netþjóninn í Helsinki, flytja PostgreSQL grunninn og kveikja á sjálfvirkri Git-dreifingu.
-5. **Lénatenging:** Beina \`rikisgat.is\` og \`gegnsaett.is\` á fasta IP-tölu Hetzner netþjónsins.
+4. **Hetzner Cloud & test.rikisgat.is (LOKIÐ & VIRKAR VEL):** Netþjónn hefur verið settur upp í Helsinki fyrir test.rikisgat.is og keyrir stöðugur og vel! Næsta skref: Beina aðalléninu rikisgat.is á netþjóninn og tengja Coolify við Git repository fyrir sjálfvirka dreifingu.
+5. **Lénatenging & Dreifing:** Beina \`rikisgat.is\` og \`gegnsaett.is\` á fasta IP-tölu Hetzner netþjónsins með sjálfvirkum SSL vottorðum.
 `;
 
   const copyReportToClipboard = () => {
@@ -288,10 +292,26 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
             skiptir v3.0 líkanið gögnunum í samræmt líkan með <strong>8–10 tengdum töflum</strong> sem henta beint fyrir stýrt skýjaumhverfi:
           </p>
 
-          {/* Grunnur: Kjarnagögn */}
+          {/* Grunnur: Kjarnagögn & Virkar Töflur */}
           <div className="pt-1">
-            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">1. Kjarnagögn Reikninga (Bókhaldsrýni)</span>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+              <span className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>A. Virkar Raungagnatöflur í PostgreSQL (100% Tengt & Virkt)</span>
+              </span>
+              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded uppercase">
+                Raungögn í Grunni
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-2">
+              <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
+                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: reikningar</div>
+                <div className="text-lg font-bold text-neutral-900 mt-1">~17.919.539 raðir</div>
+                <div className="text-xs text-neutral-600 mt-0.5">Stærð: ~{stats.reikningar_size_gib} GiB</div>
+                <div className="text-[11px] text-neutral-500 mt-2 font-mono">stofnun_id, birgi_id, dags, upphaed...</div>
+              </div>
+
               <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
                 <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: stofnanir</div>
                 <div className="text-lg font-bold text-neutral-900 mt-1">{stats.stofnanir_fjoldi} raðir</div>
@@ -307,18 +327,12 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
               </div>
 
               <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: reikningar</div>
-                <div className="text-lg font-bold text-neutral-900 mt-1">~17.919.539 raðir</div>
-                <div className="text-xs text-neutral-600 mt-0.5">Stærð: ~{stats.reikningar_size_gib} GiB</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">stofnun_id, birgi_id, dags, upphaed...</div>
+                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: tegundir_flokkun</div>
+                <div className="text-lg font-bold text-neutral-900 mt-1">607 tegundir</div>
+                <div className="text-xs text-neutral-600 mt-0.5">Varpað í 12 aðalflokka</div>
+                <div className="text-[11px] text-neutral-500 mt-2 font-mono">tegund_heiti, yfirflokkur, litur</div>
               </div>
-            </div>
-          </div>
 
-          {/* Grunnur: Aðgangsstýring & Prufunotendur */}
-          <div className="pt-2">
-            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">2. Aðgangsstýring, Prufunotendur & Stjórnun (Nýtt)</span>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-2">
               <div className="p-3.5 bg-amber-50/60 rounded-lg border border-amber-200">
                 <div className="text-xs font-bold text-amber-800 uppercase flex items-center gap-1.5">
                   <Shield className="w-3.5 h-3.5 text-amber-700" />
@@ -326,7 +340,7 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
                 </div>
                 <div className="text-lg font-bold text-neutral-900 mt-1">Lokaður Aðgangur</div>
                 <div className="text-xs text-neutral-600 mt-0.5">Stofnendur & Lykilorðavörn</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">id, name, email, password_hash, role</div>
+                <div className="text-[11px] text-neutral-500 mt-2 font-mono">id, name, email, role, is_active</div>
               </div>
 
               <div className="p-3.5 bg-blue-50/60 rounded-lg border border-blue-200">
@@ -335,42 +349,63 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
                   <span>Tafla: beta_signups</span>
                 </div>
                 <div className="text-lg font-bold text-neutral-900 mt-1">Prufuaðgangar</div>
-                <div className="text-xs text-neutral-600 mt-0.5">Skráningar & Tilkynningar</div>
+                <div className="text-xs text-neutral-600 mt-0.5">Skráningar af forsíðu</div>
                 <div className="text-[11px] text-neutral-500 mt-2 font-mono">name, email, role, wants_notifications</div>
-              </div>
-
-              <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                <div className="text-xs font-bold text-neutral-500 uppercase">Töflur: stjórn & vörumerki</div>
-                <div className="text-lg font-bold text-neutral-900 mt-1">2 Töflur</div>
-                <div className="text-xs text-neutral-600 mt-0.5">stjorn_verkefni & stjorn_vorumerki</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">vegvísir, lénamat, stöðuskýrslur</div>
               </div>
             </div>
           </div>
 
-          {/* Grunnur: Flokkun & Stoðgögn */}
-          <div className="pt-2">
-            <span className="text-xs font-black uppercase tracking-wider text-neutral-500">3. Flokkun, Upplýsingaréttur & Stillingar</span>
+          {/* Grunnur: Framtíðaráætlanir & Tómar töflur */}
+          <div className="pt-4 border-t border-neutral-200">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+              <span className="text-xs font-black uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-purple-600" />
+                <span>B. Framtíðaráætlanir & Gagnaöflun (Tómar í PostgreSQL eins og er)</span>
+              </span>
+              <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded uppercase">
+                Framtíðarvegvísir
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-600 mb-2 leading-relaxed">
+              Þessar töflur eru skilgreindar í gagnamódelinu en eru annað hvort ófylltar eða keyra tímabundið í staðværu minni vefsins meðan gagnaöflun og þróun stendur yfir:
+            </p>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-2">
-              <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: tegundir_flokkun</div>
-                <div className="text-lg font-bold text-neutral-900 mt-1">607 tegundir</div>
-                <div className="text-xs text-neutral-600 mt-0.5">Varpað í 12 aðalflokka</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">tegund_heiti, yfirflokkur, litur</div>
+              <div className="p-3.5 bg-purple-50/40 rounded-lg border border-purple-200 space-y-1">
+                <div className="text-xs font-bold text-purple-900 uppercase flex items-center justify-between">
+                  <span>Tafla: stofnanir_emails</span>
+                  <span className="text-[9px] bg-purple-200 text-purple-800 px-1.5 py-0.2 rounded font-bold">Tómt í grunni</span>
+                </div>
+                <div className="text-base font-bold text-neutral-900">Netföng Stofnana</div>
+                <div className="text-xs text-neutral-600">Lögboðnar upplýsingabeiðnir (140/2012)</div>
+                <p className="text-[11px] text-purple-900/80 leading-relaxed mt-1">
+                  <strong>Staða:</strong> Gagnaöflun og skoðanakönnun stendur yfir. Vefurinn notar forstilltan lista í bili þar til opinber netföng allra 172 stofnana hafa verið staðfest í grunninn.
+                </p>
               </div>
 
-              <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: stofnanir_emails</div>
-                <div className="text-lg font-bold text-neutral-900 mt-1">Netföng Stofnana</div>
-                <div className="text-xs text-neutral-600 mt-0.5">Fyrir Upplýsingalög 140/2012</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">stofnun_id, email, raduneyti</div>
+              <div className="p-3.5 bg-purple-50/40 rounded-lg border border-purple-200 space-y-1">
+                <div className="text-xs font-bold text-purple-900 uppercase flex items-center justify-between">
+                  <span>Töflur: stjorn_verkefni & vorumerki</span>
+                  <span className="text-[9px] bg-purple-200 text-purple-800 px-1.5 py-0.2 rounded font-bold">Tómt í grunni</span>
+                </div>
+                <div className="text-base font-bold text-neutral-900">Verkefni & Vörumerki</div>
+                <div className="text-xs text-neutral-600">Vegvísir og lénamat stjórnborðs</div>
+                <p className="text-[11px] text-purple-900/80 leading-relaxed mt-1">
+                  <strong>Staða:</strong> Keyrir í <code>localStorage</code> / staðværu minni vefsins eins og er. Verður fært í miðlægar PostgreSQL töflur við stofnun félagsins og skýjahýsingu.
+                </p>
               </div>
 
-              <div className="p-3.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                <div className="text-xs font-bold text-neutral-500 uppercase">Tafla: portal_settings</div>
-                <div className="text-lg font-bold text-neutral-900 mt-1">Miðlægar Stillingar</div>
-                <div className="text-xs text-neutral-600 mt-0.5">Víðtæk ára- og mánaðaleit</div>
-                <div className="text-[11px] text-neutral-500 mt-2 font-mono">broad_search_years, months</div>
+              <div className="p-3.5 bg-purple-50/40 rounded-lg border border-purple-200 space-y-1">
+                <div className="text-xs font-bold text-purple-900 uppercase flex items-center justify-between">
+                  <span>Tafla: portal_settings</span>
+                  <span className="text-[9px] bg-purple-200 text-purple-800 px-1.5 py-0.2 rounded font-bold">Tómt / Fallback</span>
+                </div>
+                <div className="text-base font-bold text-neutral-900">Miðlægar Stillingar</div>
+                <div className="text-xs text-neutral-600">Víðtæk ára- og mánaðaleit</div>
+                <p className="text-[11px] text-purple-900/80 leading-relaxed mt-1">
+                  <strong>Staða:</strong> Stýrir leitarhegðun í viðmóti; notar örugg sjálfgefin gildi ef taflan er ekki til staðar á localhost.
+                </p>
               </div>
             </div>
           </div>
@@ -571,9 +606,9 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           </div>
 
           <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
-            <div className="text-[11px] font-bold text-neutral-500 uppercase">Styrktarhlutfall</div>
-            <div className="text-xl font-black text-emerald-700">0,3% – 0,8%</div>
-            <p className="text-[11px] text-neutral-600">Hefðbundið hlutfall í lýðræðis- og gagnsæisverkefnum (Wikipedia/Archive).</p>
+            <div className="text-[11px] font-bold text-neutral-500 uppercase">Lénakaup (ISNIC 3 ár)</div>
+            <div className="text-xl font-black text-emerald-800">24.600 kr.</div>
+            <p className="text-[11px] text-neutral-600"><strong>rikisgat.is</strong> keypt og tryggt (13/09/2026 – 13/09/2029, ~683 kr./mán).</p>
           </div>
 
           <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
@@ -585,7 +620,7 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-1">
             <div className="text-[11px] font-bold text-neutral-500 uppercase">Hýsingarkostnaður á mánuði</div>
             <div className="text-xl font-black text-purple-700">~1.000 kr. (€6)</div>
-            <p className="text-[11px] text-neutral-600">Aðeins <strong>2 styrktaraðilar</strong> duga til að reka allan vefinn í skýinu!</p>
+            <p className="text-[11px] text-neutral-600">Aðeins <strong>2–3 styrktaraðilar</strong> duga til að standa straum af netþjóni og léni!</p>
           </div>
         </div>
 
@@ -593,8 +628,9 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <span>
-              <strong>Niðurstaða & Sjálfbærni:</strong> Aðeins ~1.000 kr./mán (€6) heldur öllum vefnum og 18,2M reikningum uppi á Hetzner CAX21. 
-              Allt fé umfram lágmarkskostnað nýtist beint til að <strong>bæta í vélbúnað og geymslupláss</strong> fyrir áframhaldandi framþróun.
+              <strong>Lén og Rekstraröryggi:</strong> Aðallénið <code>rikisgat.is</code> er þegar fullgreitt til 13. september 2029 (24.600 kr.). 
+              Mælt er með að nýta fyrstu styrki samfélagsins til að kaupa einnig hljóðlíkislénið <strong><code>rikisgatt.is</code></strong> (3 ár á 24.600 kr.) 
+              vegna þess hve framburður er líkur á íslensku, og setja upp sjálfvirka 301 áframsendingu.
             </span>
           </div>
           <p className="text-[11px] text-emerald-900/80 pl-6 leading-relaxed">
@@ -649,12 +685,20 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
         {/* Heiðursfélagar */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
           <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1">
-            <div className="font-bold text-xs text-rose-950 flex items-center gap-1.5">
-              <span>👶</span>
-              <span>Heiðursfélagi nr. 1 — Fyrsta afabarnið</span>
+            <div className="font-bold text-xs text-rose-950 flex items-center justify-between flex-wrap gap-1">
+              <span className="flex items-center gap-1.5">
+                <span>👶</span>
+                <span>Heiðursfélagi nr. 1 — Maron Hlynur Viktorsson</span>
+              </span>
+              <span className="text-[10px] bg-rose-200 text-rose-900 font-bold px-2 py-0.5 rounded-full">
+                Skírður 20.09.2026
+              </span>
+            </div>
+            <div className="text-[11px] text-rose-900 font-medium">
+              Fæddur 25. ágúst 2026 • Skírnardagur 20. september 2026
             </div>
             <p className="text-[11px] text-neutral-700 leading-relaxed">
-              Skírt 20. september 2026. Ævilangur heiðursfélagi án atkvæðisréttar sem táknmynd um að gagnsæi í dag er fyrir komandi kynslóðir.
+              Maron Hlynur Viktorsson, fyrsta afabarnið. Ævilangur heiðursfélagi án atkvæðisréttar sem táknmynd um að gagnsæi í dag er fyrir komandi kynslóðir.
             </p>
           </div>
 
@@ -696,10 +740,10 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
           <div className="bg-white p-4 rounded-lg border border-amber-200">
             <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">1</span>
-              Kynning, Stofnskjöl & Undirskriftir
+              1. Kynning Lokið & Æfing fyrir Styrki
             </div>
             <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
-              Halda kynninguna með krökkunum, lesa stofnskjölin, fá undirskriftir allra fjögurra stofnenda og ganga frá stofnfundargerð.
+              Fyrsta kynningin fór fram! Viktor sýndi mikinn áhuga og bíður spenntur eftir að sjá vefinn live. Næst: Æfa framsetninguna áfram fyrir vinum og félögum áður en sótt er um styrki, og ganga frá undirskriftum stofnskjala.
             </p>
           </div>
 
@@ -713,13 +757,13 @@ Ríkisgát er ekki aðeins upplýsingatorg, heldur beint lögfræðilegt aðhald
             </p>
           </div>
 
-          <div className="bg-white p-4 rounded-lg border border-amber-200">
-            <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">3</span>
-              Hetzner Cloud CAX21 & Coolify
+          <div className="bg-white p-4 rounded-lg border border-emerald-300 bg-emerald-50/20">
+            <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold text-xs">✓</span>
+              Hetzner Cloud & test.rikisgat.is (Virkar vel!)
             </div>
             <p className="text-xs text-neutral-700 mt-2 leading-relaxed">
-              Ræsa CAX21 netþjóninn í Helsinki, tengja Git repository við Coolify og beina <code>rikisgat.is</code> léninu á netþjóninn.
+              Netþjónn hefur verið settur upp fyrir <strong>test.rikisgat.is</strong> og virkar mjög vel! Prufuvefurinn keyrir stöðugur í skýinu. Næsta skref er að beina aðalléninu <code>rikisgat.is</code> á netþjóninn og tengja Git repository við Coolify fyrir sjálfvirka dreifingu.
             </p>
           </div>
         </div>

@@ -254,16 +254,19 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
                     <div className="flex items-center gap-2">
                       <span className="text-base">👶</span>
                       <h4 className="font-bold text-xs text-rose-950 uppercase tracking-wider">
-                        Heiðursfélagi nr. 1 — Fyrsta afabarnið
+                        Heiðursfélagi nr. 1 — Maron Hlynur Viktorsson
                       </h4>
                     </div>
                     <span className="text-[10px] bg-rose-200/80 text-rose-900 font-bold px-2 py-0.5 rounded-full">
-                      Skírnardagur 20. sept 2026
+                      Skírður 20. sept 2026
                     </span>
                   </div>
+                  <div className="text-[11px] text-rose-900 font-medium">
+                    Fæddur 25. ágúst 2026 • Skírnardagur 20. september 2026
+                  </div>
                   <p className="text-[11px] text-neutral-700 leading-relaxed">
-                    Á stofnári Ríkisgát fæddist fyrsta afabarnið í fjölskyldunni. Í tilefni skírnardagsins 
-                    hefur stjórnin sammælst um að bjóða því stöðu <strong>Heiðursfélaga nr. 1</strong> í félaginu. 
+                    Á stofnári Ríkisgát fæddist fyrsta afabarnið í fjölskyldunni, <strong>Maron Hlynur Viktorsson</strong>. Í tilefni skírnardagsins 
+                    hefur stjórnin sammælst um að bjóða honum stöðu <strong>Heiðursfélaga nr. 1</strong> í félaginu. 
                     Heiðursfélagar fara ekki með atkvæðisrétt á fundum en njóta ævilangrar viðurkenningar 
                     og boðs á öllum viðburðum félagsins — sem lifandi áminning um að við vinnum að gagnsæi fyrir komandi kynslóðir!
                   </p>
@@ -375,9 +378,10 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
                     <span>👶</span>
                     <span>Heiðursfélagi nr. 1</span>
                   </div>
-                  <div className="text-[11px] font-semibold text-rose-900">Afabarnið (Skírn 20.09.2026)</div>
+                  <div className="text-[11px] font-bold text-rose-900">Maron Hlynur Viktorsson</div>
+                  <div className="text-[10px] text-neutral-500 font-medium">F. 25.08.2026 • Skírn 20.09.2026</div>
                   <p className="text-[11px] text-neutral-600">
-                    Fyrsta afabarn stofnanda. Heiðrað með ævilöngu heiðursfélagaskírteini án atkvæðisréttar sem tákn um framtíðina.
+                    Maron Hlynur Viktorsson, fyrsta afabarn stofnanda. Heiðrað með ævilöngu heiðursfélagaskírteini án atkvæðisréttar sem tákn um framtíðina.
                   </p>
                 </div>
 
@@ -438,7 +442,7 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
                   Útdráttur úr 7. lið fundargerðar (Heiðursfélagar):
                 </h4>
                 <blockquote className="border-l-2 border-neutral-400 pl-3 italic text-neutral-700">
-                  „Samþykkt var einróma að bjóða fyrsta afabarni stofnanda stöðu Heiðursfélaga nr. 1 í tilefni skírnardags þess 20. september 2026. Þá var samþykkt að gera Sigþrúði Guðnadóttur að Heiðursfélaga nr. 2 í félaginu í þakklætisskyni fyrir ómetanlegan stuðning og traust við stofnunina. Heiðursfélagar njóta sérstakrar viðurkenningar og boðs á alla opna fundi og viðburði félagsins án almenns atkvæðisréttar, að því undanskildu að Heiðursfélagi nr. 2 (Sigþrúður Guðnadóttir) fær oddaatkvæðisrétt til að skera úr málum komi upp jafntefli við atkvæðagreiðslur í stjórn félagsins.“
+                  „Samþykkt var einróma að bjóða fyrsta afabarni stofnanda, Maron Hlyni Viktorssyni (f. 25. ágúst 2026), stöðu Heiðursfélaga nr. 1 í tilefni skírnardags hans 20. september 2026. Þá var samþykkt að gera Sigþrúði Guðnadóttur að Heiðursfélaga nr. 2 í félaginu í þakklætisskyni fyrir ómetanlegan stuðning og traust við stofnunina. Heiðursfélagar njóta sérstakrar viðurkenningar og boðs á alla opna fundi og viðburði félagsins án almenns atkvæðisréttar, að því undanskildu að Heiðursfélagi nr. 2 (Sigþrúður Guðnadóttir) fær oddaatkvæðisrétt til að skera úr málum komi upp jafntefli við atkvæðagreiðslur í stjórn félagsins.“
                 </blockquote>
               </div>
             </div>
