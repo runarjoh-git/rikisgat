@@ -1,5 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="6" fill="#171717"/>
-  <path d="M16 6L24 10V16C24 21 20.5 24.5 16 26C11.5 24.5 8 21 8 16V10L16 6Z" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="#0f172a"/>
-  <path d="M16 11V21M11 16H21" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Rounded white background square -->
+  <rect width="32" height="32" rx="6" fill="#FFFFFF"/>
+  
+  <!-- Bold, Elegant Serif 'R' -->
+  <path d="M9 24H15M12 24V9M10 9H16.5C19.5 9 21.5 10.5 21.5 13.5C21.5 16 19.5 17.5 16.5 17.5H12M15.5 17.5L20.5 24H23M9 9H14" 
+        stroke="#171717" 
+        stroke-width="3.2" 
+        stroke-linecap="butt" 
+        stroke-linejoin="butt"/>
 </svg>
